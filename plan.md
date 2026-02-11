@@ -38,17 +38,24 @@ Nebuchadnezzar is a ground-up reimplementation of claudecodeui focused exclusive
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐      │
 │  │ Sessions │ │ Messages │ │  Agents  │ │ Workflows│      │
 │  └──────────┘ └──────────┘ └──────────┘ └──────────┘      │
-│  Real-time Sync • Reactive Queries • Optimistic Updates    │
+│  Real-time Sync • Reactive Queries • Streaming Updates     │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                    Host CLI Orchestrator                     │
+│                Host CLI Orchestrator (on host)               │
 │  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐       │
-│  │ Claude SDK   │ │ File System  │ │Process Manager│       │
-│  │ Integration  │ │   Watcher    │ │   (PM2-like)  │       │
+│  │ Claude SDK   │ │Container Mgmt│ │ File Watcher │       │
+│  │ (with creds) │ │ & Worktrees  │ │ (JSONL sync) │       │
 │  └──────────────┘ └──────────────┘ └──────────────┘       │
 └─────────────────────────────────────────────────────────────┘
+                              │
+                    ┌─────────┴─────────┐
+                    ▼                   ▼
+        ┌──────────────────┐  ┌──────────────────┐
+        │ Host Execution   │  │ Container Agents │
+        │ (Direct SDK)     │  │ (via proxy.sh)   │
+        └──────────────────┘  └──────────────────┘
 ```
 
 ## Technology Stack
@@ -161,6 +168,18 @@ export default defineSchema({
     role: v.union(v.literal("user"), v.literal("assistant"), v.literal("system")),
     content: v.string(),
     timestamp: v.number(),
+    // Streaming and sync fields
+    streamStatus: v.optional(v.union(
+      v.literal("pending"),
+      v.literal("streaming"),
+      v.literal("synced"),
+      v.literal("complete")
+    )),
+    streamedLength: v.optional(v.number()),
+    fileLength: v.optional(v.number()),
+    lastStreamUpdate: v.optional(v.number()),
+    lastFileSync: v.optional(v.number()),
+    checksum: v.optional(v.string()),
     metadata: v.optional(
       v.object({
         toolCalls: v.optional(v.array(v.any())),
@@ -188,6 +207,12 @@ export default defineSchema({
     startedAt: v.optional(v.number()),
     completedAt: v.optional(v.number()),
     error: v.optional(v.string()),
+    // Container execution fields
+    executionMode: v.union(v.literal("host"), v.literal("container")),
+    containerId: v.optional(v.string()),
+    worktreeBranch: v.optional(v.string()),
+    portRangeStart: v.optional(v.number()),
+    portRangeEnd: v.optional(v.number()),
   })
     .index("by_session", ["sessionId"])
     .index("by_parent", ["parentAgentId"])
@@ -296,7 +321,201 @@ const messages = useQuery(api.messages.bySession, { sessionId });
 // Messages update in real-time as chunks arrive
 ```
 
-### 4. Host CLI Orchestrator
+### 4. Container Communication Pattern
+
+The Host CLI Orchestrator manages both host and container execution without running Claude SDK inside containers:
+
+```typescript
+// Execution routing based on claudecodeui pattern
+class ExecutionRouter {
+  async executeClaudeQuery(projectPath: string, prompt: string, useContainer: boolean) {
+    if (useContainer && await this.hasDevcontainer(projectPath)) {
+      // Create proxy script that forwards to container
+      const proxyScript = `#!/bin/bash
+devcontainer exec --workspace-folder ${projectPath} -- claude "$@"`;
+
+      await fs.writeFile('/tmp/claude-proxy.sh', proxyScript);
+      await fs.chmod('/tmp/claude-proxy.sh', 0o755);
+
+      // SDK uses proxy script instead of direct execution
+      return await this.sdk.query(prompt, {
+        pathToClaudeCodeExecutable: '/tmp/claude-proxy.sh',
+        workingDirectory: projectPath
+      });
+    } else {
+      // Direct host execution
+      return await this.sdk.query(prompt, {
+        workingDirectory: projectPath
+      });
+    }
+  }
+
+  private async hasDevcontainer(projectPath: string): Promise<boolean> {
+    return fs.existsSync(path.join(projectPath, '.devcontainer/devcontainer.json'));
+  }
+}
+```
+
+Key benefits:
+- **Credentials stay on host** - Never exposed to containers
+- **Skills work automatically** - Read from host `~/.claude/` directory
+- **Single SDK instance** - Shared across all containers
+- **Security boundary** - Containers are just execution environments
+
+### 5. Hybrid Streaming Architecture
+
+Combining real-time streaming with file-based reconciliation for reliability:
+
+```typescript
+// Using Convex's proper streaming patterns
+export const startClaudeQuery = mutation({
+  handler: async (ctx, args) => {
+    // Create placeholder message
+    const messageId = await ctx.db.insert("messages", {
+      sessionId: args.sessionId,
+      role: "assistant",
+      content: "",
+      streamStatus: "pending",
+      streamedLength: 0,
+      fileLength: 0,
+    });
+
+    // Schedule internal action for streaming
+    await ctx.scheduler.runAfter(0, internal.claude.streamFromHost, {
+      messageId,
+      prompt: args.prompt,
+      useContainer: args.useContainer
+    });
+
+    return messageId;
+  }
+});
+
+export const streamFromHost = internalAction({
+  handler: async (ctx, args) => {
+    // Call Host CLI for streaming response
+    const response = await fetch("http://host:3002/claude/stream", {
+      method: "POST",
+      body: JSON.stringify(args)
+    });
+
+    const reader = response.body.getReader();
+    let accumulated = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      const chunk = new TextDecoder().decode(value);
+      accumulated += chunk;
+
+      // Progressive updates via internal mutation
+      await ctx.runMutation(internal.claude.appendChunk, {
+        messageId: args.messageId,
+        content: accumulated,
+        streamedLength: accumulated.length
+      });
+    }
+  }
+});
+
+// File watcher reconciliation for reliability
+export const reconcileFromFile = internalMutation({
+  handler: async (ctx, args) => {
+    const message = await ctx.db.get(args.messageId);
+
+    // Only update if file has more content than stream
+    if (args.fileLength > message.streamedLength) {
+      await ctx.db.patch(args.messageId, {
+        content: args.fileContent,
+        fileLength: args.fileLength,
+        streamStatus: "synced"
+      });
+    }
+  }
+});
+```
+
+This gives us:
+- **Real-time streaming UX** - Immediate feedback
+- **File-based reliability** - Never lose data
+- **Single Convex document** - Frontend stays simple
+- **Automatic reconciliation** - Best of both worlds
+
+### 6. Isolated Agent Execution with Git Worktrees
+
+Each agent gets its own isolated environment with dynamic port allocation:
+
+```typescript
+// Agent container orchestration
+class AgentContainerManager {
+  private portAllocator = new PortRangeAllocator(3000, 9000, 100);
+
+  async spawnAgentContainer(agentId: string, projectPath: string) {
+    // 1. Create git worktree for isolation
+    const worktreePath = `.worktrees/agent-${agentId}`;
+    await exec(`git worktree add ${worktreePath} -b agent-${agentId}`);
+
+    // 2. Allocate unique port range
+    const portRange = await this.portAllocator.allocate(agentId);
+
+    // 3. Extend existing devcontainer config dynamically
+    const baseConfig = await this.readDevcontainerConfig(projectPath);
+    const agentConfig = {
+      ...baseConfig,
+      name: `${baseConfig.name}-agent-${agentId}`,
+      workspaceMount: `source=${worktreePath},target=/workspace,type=bind`,
+      remoteEnv: {
+        ...baseConfig.remoteEnv,
+        PORT_RANGE_START: portRange.start,
+        PORT_RANGE_END: portRange.end,
+        AGENT_ID: agentId,
+        // Common dev server port env vars
+        PORT: portRange.start,
+        VITE_PORT: portRange.start,
+        NEXT_PORT: portRange.start,
+      },
+      runArgs: [
+        ...baseConfig.runArgs || [],
+        "--label", `neb.agent.id=${agentId}`,
+        "--label", `neb.worktree=${worktreePath}`,
+        "-p", `${portRange.start}-${portRange.end}:${portRange.start}-${portRange.end}`
+      ]
+    };
+
+    // 4. Start container with extended config
+    const configPath = `/tmp/devcontainer-${agentId}.json`;
+    await fs.writeFile(configPath, JSON.stringify(agentConfig));
+    await exec(`devcontainer up --workspace-folder ${worktreePath} --config ${configPath}`);
+
+    // 5. Register in Convex
+    await convex.mutation(api.agents.registerContainer, {
+      agentId,
+      worktreePath,
+      portRange
+    });
+  }
+
+  async mergeAgentWork(agentId: string) {
+    // Merge worktree back to main
+    await exec(`git merge agent-${agentId}`);
+    await exec(`git worktree remove .worktrees/agent-${agentId}`);
+
+    // Clean up container
+    await exec(`docker stop neb-agent-${agentId}`);
+    await this.portAllocator.release(agentId);
+  }
+}
+```
+
+Benefits:
+- **Complete isolation** - No conflicts between agents
+- **Dynamic port allocation** - No port conflicts
+- **Clean git history** - Each agent has its own branch
+- **Zero project config** - Extends existing devcontainers
+- **Parallel execution** - Agents work independently
+
+### 7. Host CLI Orchestrator
 
 ```typescript
 // host-orchestrator/src/index.ts
@@ -532,11 +751,12 @@ new Orchestrator().start();
 - **Deployment**: Simplified deployment to Vercel/self-host
 
 ### 3. Why Host CLI Orchestrator?
-- **Direct File Access**: Native file system operations
-- **Process Management**: Better control over Claude SDK
-- **Security Boundary**: Isolate privileged operations
-- **Performance**: Avoid Docker networking overhead
-- **Flexibility**: Easy to add new integrations
+- **Credential Management**: Claude SDK runs on host with credentials, never in containers
+- **Skill Integration**: Automatically loads skills from host `~/.claude/` directory
+- **Container Orchestration**: Manages devcontainers and git worktrees for agents
+- **Proxy Script Pattern**: Routes execution to containers while keeping SDK on host
+- **Streaming Bridge**: Handles real-time streaming from SDK to Convex
+- **File Watcher**: Syncs JSONL files to Convex for reliability
 
 ### 4. Why Devcontainer-First?
 - **Reproducibility**: Identical environment for all developers
