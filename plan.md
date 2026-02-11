@@ -61,27 +61,38 @@ Nebuchadnezzar is a ground-up reimplementation of claudecodeui focused exclusive
 ## Technology Stack
 
 ### Core Framework
-- **Next.js 15**: App Router with React Server Components
+- **Next.js 15**: App Router with React 19 Server Components
 - **TypeScript 5.6+**: Full type safety across stack
-- **Convex**: Real-time database and sync platform
-- **Tailwind CSS**: Utility-first styling with shadcn/ui components
+- **Convex**: Real-time database and sync platform (local deployment)
+- **Tailwind CSS v4**: Modern utility-first styling with shadcn/ui v2 components
 
 ### Claude Integration
 - **@anthropic-ai/claude-agent-sdk**: Direct SDK integration
-- **Custom WebSocket Bridge**: Convex → Claude streaming adapter
-- **Tool Approval System**: UI-driven permission management
+- **Convex Actions**: For streaming from Claude to frontend
+- **YOLO Mode Only**: --dangerously-skip-permissions is the only supported option (no approval flows)
+
+### Authentication & Security
+- **BetterAuth**: Modern, type-safe authentication for Next.js (replaces NextAuth)
+- **zod**: Runtime validation and type inference
+- **argon2**: Password hashing (if needed for local auth)
 
 ### Development Environment
 - **Devcontainer**: Node.js 22 Alpine-based container
 - **Docker Compose**: Multi-service orchestration (Next.js + Convex local)
-- **VS Code Extensions**: Convex, Tailwind IntelliSense, TypeScript
-- **Hot Reload**: Webpack HMR with polling for container compatibility
+- **Biome**: Fast, modern alternative to ESLint + Prettier (single tool, Rust-based)
+- **VS Code Extensions**: Convex, Tailwind IntelliSense, TypeScript, Biome
 
 ### Testing & Quality
-- **Vitest**: Unit and integration testing
+- **Vitest**: Unit and integration testing (still the best choice)
 - **Playwright**: E2E testing with devcontainer support
-- **ESLint + Prettier**: Code quality enforcement
-- **Husky**: Pre-commit hooks for quality gates
+- **Biome**: Linting, formatting, and import sorting in one tool
+- **lefthook**: Modern, fast Git hooks (better than Husky, parallel execution)
+
+### Container & Orchestration
+- **Dockerode**: Docker API for Node.js (container management)
+- **Devcontainer CLI**: Official Microsoft tool for devcontainer operations
+- **chokidar**: File watching (mature and reliable)
+- **bullmq**: Job queue for background tasks (if needed)
 
 ## Detailed Component Architecture
 
@@ -100,8 +111,7 @@ Nebuchadnezzar is a ground-up reimplementation of claudecodeui focused exclusive
 ├── api/
 │   ├── claude/
 │   │   ├── query/          # Start Claude query
-│   │   ├── abort/          # Abort active session
-│   │   └── approve/        # Tool approval endpoint
+│   │   └── abort/          # Abort active session
 │   └── orchestrator/       # Host CLI communication
 └── _components/
     ├── chat/               # Chat interface components
@@ -124,7 +134,7 @@ export default defineSchema({
     settings: v.object({
       theme: v.union(v.literal("light"), v.literal("dark")),
       claudeModel: v.string(),
-      autoApproveTools: v.boolean(),
+      // YOLO mode only - no approval settings needed
     }),
   }).index("by_email", ["email"]),
 
@@ -233,19 +243,7 @@ export default defineSchema({
     createdBy: v.id("users"),
   }).index("by_name", ["name"]),
 
-  toolApprovals: defineTable({
-    sessionId: v.id("sessions"),
-    toolName: v.string(),
-    parameters: v.any(),
-    status: v.union(
-      v.literal("pending"),
-      v.literal("approved"),
-      v.literal("rejected")
-    ),
-    requestedAt: v.number(),
-    respondedAt: v.optional(v.number()),
-    autoApproved: v.boolean(),
-  }).index("by_session_status", ["sessionId", "status"]),
+  // No toolApprovals table - YOLO mode only!
 });
 ```
 
@@ -321,46 +319,71 @@ const messages = useQuery(api.messages.bySession, { sessionId });
 // Messages update in real-time as chunks arrive
 ```
 
-### 4. Container Communication Pattern
+### 4. Container Execution Pattern
 
-The Host CLI Orchestrator manages both host and container execution without running Claude SDK inside containers:
+The Host CLI Orchestrator manages Claude instances running inside project-specific containers:
 
 ```typescript
-// Execution routing based on claudecodeui pattern
-class ExecutionRouter {
-  async executeClaudeQuery(projectPath: string, prompt: string, useContainer: boolean) {
-    if (useContainer && await this.hasDevcontainer(projectPath)) {
-      // Create proxy script that forwards to container
-      const proxyScript = `#!/bin/bash
-devcontainer exec --workspace-folder ${projectPath} -- claude "$@"`;
+// Container-first Claude execution
+class ContainerClaudeExecutor {
+  async executeClaudeQuery(projectPath: string, prompt: string, agentId: string) {
+    // Always prefer container execution for isolation
+    if (await this.hasDevcontainer(projectPath)) {
+      // 1. Ensure container is running with proper mounts
+      const containerId = await this.ensureContainer(projectPath, agentId);
 
-      await fs.writeFile('/tmp/claude-proxy.sh', proxyScript);
-      await fs.chmod('/tmp/claude-proxy.sh', 0o755);
+      // 2. Pass credentials securely via environment
+      const env = {
+        ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+        CLAUDE_PROJECT_PATH: '/workspace',
+        CLAUDE_OUTPUT_PATH: '/tmp/streams',
+        AGENT_ID: agentId
+      };
 
-      // SDK uses proxy script instead of direct execution
-      return await this.sdk.query(prompt, {
-        pathToClaudeCodeExecutable: '/tmp/claude-proxy.sh',
-        workingDirectory: projectPath
+      // 3. Execute Claude inside the container
+      const claudeCommand = `claude-code ${prompt}`;
+      const result = await this.docker.exec(containerId, claudeCommand, {
+        env,
+        workDir: '/workspace'
       });
+
+      return result;
     } else {
-      // Direct host execution
-      return await this.sdk.query(prompt, {
-        workingDirectory: projectPath
-      });
+      // Fallback to host execution if no devcontainer
+      return await this.executeOnHost(projectPath, prompt);
     }
   }
 
-  private async hasDevcontainer(projectPath: string): Promise<boolean> {
-    return fs.existsSync(path.join(projectPath, '.devcontainer/devcontainer.json'));
+  async ensureContainer(projectPath: string, agentId: string) {
+    const containerName = `neb-${path.basename(projectPath)}-${agentId}`;
+
+    // Check if container exists
+    const existing = await this.docker.getContainer(containerName);
+    if (existing) return existing.id;
+
+    // Start new container with all necessary mounts
+    const mounts = [
+      `${projectPath}:/workspace`,                    // Project files
+      `~/.claude:/home/node/.claude:ro`,             // Skills (read-only)
+      `/tmp/claude-streams/${agentId}:/tmp/streams`  // Output directory
+    ];
+
+    return await this.devcontainer.up({
+      workspaceFolder: projectPath,
+      containerName,
+      additionalMounts: mounts,
+      updateRemoteUserUID: true
+    });
   }
 }
 ```
 
 Key benefits:
-- **Credentials stay on host** - Never exposed to containers
-- **Skills work automatically** - Read from host `~/.claude/` directory
-- **Single SDK instance** - Shared across all containers
-- **Security boundary** - Containers are just execution environments
+- **True Isolation** - Each project gets its own environment with dependencies
+- **No Port Conflicts** - Each container has isolated network namespace
+- **Native Dev Experience** - Claude sees the same environment as developers
+- **Clean Host** - No Node version conflicts or package pollution on host
+- **Parallel Execution** - Multiple projects/agents without interference
 
 ### 5. Hybrid Streaming Architecture
 
@@ -442,78 +465,142 @@ This gives us:
 - **Single Convex document** - Frontend stays simple
 - **Automatic reconciliation** - Best of both worlds
 
-### 6. Isolated Agent Execution with Git Worktrees
+### 6. Perfect Isolation: Git Worktrees + Containers
 
-Each agent gets its own isolated environment with dynamic port allocation:
+Each agent gets completely isolated environment - not just code, but databases, caches, and test data:
 
 ```typescript
-// Agent container orchestration
-class AgentContainerManager {
-  private portAllocator = new PortRangeAllocator(3000, 9000, 100);
-
-  async spawnAgentContainer(agentId: string, projectPath: string) {
-    // 1. Create git worktree for isolation
-    const worktreePath = `.worktrees/agent-${agentId}`;
+// True isolation for parallel agents
+class IsolatedAgentOrchestrator {
+  async spawnAgentContainer(agentId: string, projectPath: string, task: AgentTask) {
+    // 1. Create git worktree - separate file system
+    const worktreePath = `/worktrees/${projectPath}-agent-${agentId}`;
     await exec(`git worktree add ${worktreePath} -b agent-${agentId}`);
 
-    // 2. Allocate unique port range
-    const portRange = await this.portAllocator.allocate(agentId);
-
-    // 3. Extend existing devcontainer config dynamically
-    const baseConfig = await this.readDevcontainerConfig(projectPath);
-    const agentConfig = {
-      ...baseConfig,
-      name: `${baseConfig.name}-agent-${agentId}`,
-      workspaceMount: `source=${worktreePath},target=/workspace,type=bind`,
-      remoteEnv: {
-        ...baseConfig.remoteEnv,
-        PORT_RANGE_START: portRange.start,
-        PORT_RANGE_END: portRange.end,
-        AGENT_ID: agentId,
-        // Common dev server port env vars
-        PORT: portRange.start,
-        VITE_PORT: portRange.start,
-        NEXT_PORT: portRange.start,
-      },
-      runArgs: [
-        ...baseConfig.runArgs || [],
-        "--label", `neb.agent.id=${agentId}`,
-        "--label", `neb.worktree=${worktreePath}`,
-        "-p", `${portRange.start}-${portRange.end}:${portRange.start}-${portRange.end}`
-      ]
+    // 2. Each agent gets its own data volumes
+    const volumes = {
+      postgres: `neb-postgres-${agentId}`,     // Isolated Postgres
+      redis: `neb-redis-${agentId}`,           // Isolated Redis
+      elasticsearch: `neb-elastic-${agentId}`,  // Isolated Elasticsearch
+      uploads: `neb-uploads-${agentId}`,        // Isolated file uploads
+      node_modules: `neb-node-${agentId}`,      // Isolated dependencies!
     };
 
-    // 4. Start container with extended config
-    const configPath = `/tmp/devcontainer-${agentId}.json`;
-    await fs.writeFile(configPath, JSON.stringify(agentConfig));
-    await exec(`devcontainer up --workspace-folder ${worktreePath} --config ${configPath}`);
+    // 3. Spin up agent-specific services
+    const composeOverride = {
+      version: '3.8',
+      services: {
+        app: {
+          volumes: [
+            `${worktreePath}:/workspace`,
+            `${volumes.node_modules}:/workspace/node_modules`,
+            `${volumes.uploads}:/workspace/uploads`
+          ],
+          environment: {
+            DATABASE_URL: `postgresql://user:pass@postgres-${agentId}/db`,
+            REDIS_URL: `redis://redis-${agentId}:6379`,
+            TEST_DATABASE: `test_${agentId}`,
+            NODE_ENV: 'development',
+            AGENT_ID: agentId
+          }
+        },
+        postgres: {
+          container_name: `postgres-${agentId}`,
+          volumes: [`${volumes.postgres}:/var/lib/postgresql/data`],
+        },
+        redis: {
+          container_name: `redis-${agentId}`,
+          volumes: [`${volumes.redis}:/data`],
+        }
+      }
+    };
 
-    // 5. Register in Convex
-    await convex.mutation(api.agents.registerContainer, {
-      agentId,
-      worktreePath,
-      portRange
+    // 4. Start isolated environment
+    await this.docker.composeUp({
+      projectName: `neb-agent-${agentId}`,
+      workdir: worktreePath,
+      override: composeOverride
     });
+
+    return { agentId, worktreePath, volumes };
   }
 
-  async mergeAgentWork(agentId: string) {
-    // Merge worktree back to main
-    await exec(`git merge agent-${agentId}`);
-    await exec(`git worktree remove .worktrees/agent-${agentId}`);
-
-    // Clean up container
-    await exec(`docker stop neb-agent-${agentId}`);
-    await this.portAllocator.release(agentId);
+  async runParallelTests(agents: Agent[]) {
+    // All agents can run simultaneously without conflicts!
+    return Promise.all(agents.map(agent =>
+      this.runInContainer(agent.id, 'npm test')
+    ));
   }
 }
 ```
 
+### Real-World Scenarios This Solves
+
+#### Scenario 1: Database Migrations
+```typescript
+// Without isolation - DISASTER:
+Agent1: "Running migration: add user.email column"
+Agent2: "Running tests... FAIL: unexpected column user.email" ❌
+
+// With isolation - PERFECT:
+Agent1: "Running migration in postgres-agent1"  ✅
+Agent2: "Running tests in postgres-agent2"       ✅
+// No conflicts!
+```
+
+#### Scenario 2: Parallel Testing
+```typescript
+// Three agents testing different features simultaneously
+Agent1: Testing auth flow → Creates 100 test users in its DB
+Agent2: Testing payment → Processes test transactions in its DB
+Agent3: Testing search → Rebuilds search index in its Elasticsearch
+
+// All running in parallel without any interference!
+```
+
+#### Scenario 3: Dependency Experiments
+```typescript
+// Agent exploring upgrade paths
+Agent1: npm install react@18 → Test suite → ✅
+Agent2: npm install react@19-beta → Test suite → ❌
+Agent3: Current versions → Performance benchmark
+
+// Main workspace remains untouched
+// node_modules isolation means no conflicts
+```
+
+#### Scenario 4: Data Generation
+```typescript
+// Agents generating test data
+Agent1: Seeding 10,000 products for load testing
+Agent2: Generating API fixtures for documentation
+Agent3: Creating edge case data for bug reproduction
+
+// Each has its own database - no data pollution
+```
+
+### The Killer Feature Stack
+
+```yaml
+Per-Agent Isolation:
+  ✅ Git Worktree:      Separate code branches
+  ✅ Database:          Separate Postgres/MySQL/Mongo instances
+  ✅ Cache:             Separate Redis/Memcached instances
+  ✅ Search:            Separate Elasticsearch indices
+  ✅ File Storage:      Separate upload directories
+  ✅ Dependencies:      Separate node_modules/venv/vendor
+  ✅ Ports:             Separate port ranges (3000-3099 per agent)
+  ✅ Environment:       Separate env vars and secrets
+  ✅ Test Data:         Separate test fixtures and seeds
+  ✅ Logs:              Separate log streams
+```
+
 Benefits:
-- **Complete isolation** - No conflicts between agents
-- **Dynamic port allocation** - No port conflicts
-- **Clean git history** - Each agent has its own branch
-- **Zero project config** - Extends existing devcontainers
-- **Parallel execution** - Agents work independently
+- **True Parallel Execution** - 10 agents = 10 completely isolated environments
+- **No Test Pollution** - Each agent's tests run in virgin environment
+- **Safe Experimentation** - Agents can try risky changes without affecting others
+- **Database Freedom** - Migrations, seeds, and destructive tests all safe
+- **Performance Testing** - Load test one agent while others work normally
 
 ### 7. Host CLI Orchestrator
 
@@ -551,11 +638,8 @@ class Orchestrator {
         const stream = await this.sdk.query(prompt, {
           ...options,
           signal: abortController.signal,
-          onToolApprovalRequired: async (tool) => {
-            // Request approval from UI via Convex
-            const approval = await this.requestToolApproval(agentId, tool);
-            return approval;
-          },
+          // YOLO mode - always skip permissions
+          dangerouslySkipPermissions: true,
         });
 
         // Stream response back
@@ -606,17 +690,7 @@ class Orchestrator {
     });
   }
 
-  private async requestToolApproval(agentId: string, tool: any) {
-    // Call Convex to create approval request
-    const response = await fetch("http://localhost:3000/api/convex/tool-approval", {
-      method: "POST",
-      body: JSON.stringify({ agentId, tool }),
-    });
-
-    // Wait for approval (with timeout)
-    const approval = await response.json();
-    return approval.approved;
-  }
+  // No tool approval needed in YOLO mode!
 
   start(port: number = 3002) {
     const server = createServer(this.app);
@@ -632,107 +706,116 @@ class Orchestrator {
 new Orchestrator().start();
 ```
 
-## Migration Strategy from claudecodeui
+## Implementation Strategy
 
-### Phase 1: Core Infrastructure (Week 1-2)
-1. **Devcontainer Setup**
-   - Create .devcontainer with Node.js 22 Alpine
-   - Configure Docker Compose for Next.js + Convex
-   - Add VS Code extensions and settings
-   - Set up hot reload with polling
+*We're cooking with agents here - no artificial timelines, just progressive enhancement and rapid iteration.*
 
-2. **Next.js Scaffold**
-   - Initialize Next.js 15 with App Router
-   - Configure TypeScript with strict mode
-   - Set up Tailwind + shadcn/ui
-   - Create basic layout structure
+### Orchestration Philosophy
+Start simple, layer complexity as needed. Each phase builds on proven foundations from the previous one.
 
-3. **Convex Integration**
-   - Define initial schema
-   - Set up authentication
-   - Create basic CRUD operations
-   - Test real-time sync
+### Infrastructure Approach
+- **Single machine optimization first** - Get a beefy server and push it to its limits
+- **Shared mounts for containers** - All containers access the same project filesystem
+- **Local Convex** - Designed for thousands of users, will handle single-user loads easily
+- **Future-ready architecture** - Remote execution can be added later without major rewrites
 
-4. **Host Orchestrator**
-   - Create separate Node.js service
-   - Integrate Claude SDK
-   - Set up communication bridge
-   - Implement file watching
+### Phase 1: Foundation
+**Goal: Prove the core architecture works**
 
-### Phase 2: Core Features (Week 3-4)
-1. **Chat Interface**
-   - Port ChatInterface component
-   - Adapt to Convex real-time updates
-   - Implement markdown rendering
-   - Add code highlighting
+1. **Minimal Viable Stack**
+   - Next.js 15 with basic UI shell
+   - Convex for state (local deployment)
+   - Host CLI with simple Claude SDK integration
+   - Single container execution (no worktrees yet)
 
-2. **Session Management**
-   - Create session list UI
-   - Implement session creation/deletion
-   - Add session resume capability
-   - Build message history
+2. **Core Communication Loop**
+   - User input → Convex → Host CLI → Claude SDK → Convex → UI
+   - Validate streaming works end-to-end
+   - Test file operations through shared mounts
 
-3. **Tool Approval System**
-   - Create approval UI components
-   - Implement approval flow via Convex
-   - Add auto-approval settings
-   - Handle timeout scenarios
+3. **Basic Session Management**
+   - Create/resume sessions
+   - Message persistence in Convex
+   - Simple chat interface
 
-4. **File Browser**
-   - Port FileTree component
-   - Connect to host file system
-   - Implement file operations
-   - Add file watching integration
+### Phase 2: Intelligence Layer
+**Goal: Make it actually useful**
 
-### Phase 3: Advanced Features (Week 5-6)
-1. **Multi-Agent Support**
-   - Design agent execution framework
-   - Implement parallel agent spawning
-   - Create agent status UI
-   - Add sub-agent hierarchies
+1. **Full Claude Integration**
+   - All Claude tools working
+   - Tool approval flow
+   - Proper error handling
+   - Session abort capability
 
-2. **Workflow System**
-   - Create workflow builder UI
-   - Implement step orchestration
-   - Add dependency management
-   - Build workflow templates
+2. **Container Execution**
+   - Devcontainer support for projects
+   - Proxy script routing
+   - Shared mount configuration
+   - Port forwarding for web servers
 
-3. **Settings & Preferences**
-   - Port settings UI
-   - Add Convex persistence
-   - Implement theme switching
-   - Create API key management
+3. **File System Intelligence**
+   - File watcher integration
+   - Real-time sync to Convex
+   - Project structure awareness
 
-4. **Performance Optimization**
-   - Implement virtual scrolling for messages
-   - Add message pagination
-   - Optimize Convex queries
-   - Add caching strategies
+### Phase 3: Multi-Agent Orchestration
+**Goal: Parallel execution and isolation**
 
-### Phase 4: Polish & Testing (Week 7-8)
-1. **Testing Suite**
-   - Unit tests for components
-   - Integration tests for Convex
-   - E2E tests with Playwright
-   - Load testing for real-time sync
+1. **Git Worktree Isolation**
+   - Dynamic worktree creation
+   - Branch management per agent
+   - Automatic merging strategies
 
-2. **Documentation**
-   - API documentation
-   - User guide
-   - Developer setup guide
-   - Deployment guide
+2. **Container Orchestration**
+   - Parallel container spawning
+   - Dynamic port allocation
+   - Resource pooling
 
-3. **Error Handling**
-   - Add error boundaries
-   - Implement retry logic
-   - Create error reporting
-   - Add user notifications
+3. **Agent Coordination**
+   - Parent-child relationships
+   - Status tracking in Convex
+   - Result aggregation
 
-4. **Production Readiness**
-   - Security audit
-   - Performance profiling
-   - Docker production build
-   - CI/CD pipeline setup
+### Phase 4: Production Hardening
+**Goal: Make it bulletproof**
+
+1. **Resource Management**
+   - Container lifecycle automation
+   - Worktree cleanup
+   - Port allocation recycling
+   - Memory/CPU limits
+
+2. **Reliability Features**
+   - Health checks
+   - Automatic recovery
+   - State reconciliation
+   - Graceful degradation
+
+3. **Performance Optimization**
+   - Message batching
+   - Virtual scrolling
+   - Lazy loading
+   - Query optimization
+
+### Phase 5: Enhanced Intelligence
+**Goal: Advanced workflows and automation**
+
+1. **Mermaid-Based Orchestration**
+   - Define workflows as diagrams
+   - Visual execution flow
+   - Auto-parallelization
+   - Live progress tracking
+
+2. **Collaboration Features**
+   - Multi-session support
+   - Workspace sharing
+   - Real-time presence
+
+3. **Analytics & Insights**
+   - Token usage tracking
+   - Performance metrics
+   - Cost optimization
+   - Pattern detection
 
 ## Key Architectural Decisions
 
@@ -751,12 +834,22 @@ new Orchestrator().start();
 - **Deployment**: Simplified deployment to Vercel/self-host
 
 ### 3. Why Host CLI Orchestrator?
-- **Credential Management**: Claude SDK runs on host with credentials, never in containers
-- **Skill Integration**: Automatically loads skills from host `~/.claude/` directory
+- **Credential Management**: Securely passes credentials to container Claude instances
+- **Skill Integration**: Mounts host `~/.claude/` directory read-only into containers
 - **Container Orchestration**: Manages devcontainers and git worktrees for agents
-- **Proxy Script Pattern**: Routes execution to containers while keeping SDK on host
-- **Streaming Bridge**: Handles real-time streaming from SDK to Convex
+- **Dependency Isolation**: Each project's Claude runs in its devcontainer environment
+- **Port Management**: No host port conflicts - each container gets isolated port ranges
+- **Streaming Bridge**: Handles real-time streaming from containerized Claude to Convex
 - **File Watcher**: Syncs JSONL files to Convex for reliability
+
+### 4. Why Run Claude in Containers?
+- **Dependency Isolation**: Each project can have different Node versions, tools, etc.
+- **Port Conflict Prevention**: Dev servers (Vite, Next.js, etc.) run in isolated namespaces
+- **Clean Environment**: No pollution of host system with project dependencies
+- **Reproducibility**: Same environment for Claude as developers use
+- **Security Boundary**: Project code can't affect host system
+- **First-Class Devcontainer Support**: Claude sees the exact same environment as VS Code
+- **Parallel Execution**: Multiple Claudes can run without conflicts
 
 ### 4. Why Devcontainer-First?
 - **Reproducibility**: Identical environment for all developers
@@ -829,7 +922,7 @@ const messages = useQuery(api.messages.bySession, { sessionId });
 ## Security Architecture
 
 ### Authentication
-- NextAuth.js for authentication
+- BetterAuth for authentication (modern, type-safe, Next.js optimized)
 - JWT tokens for API access
 - Session encryption
 - CSRF protection
@@ -949,10 +1042,601 @@ services:
    - Role-based access control
    - Private model deployment
 
+## Mermaid-Driven Orchestration: Future Vision
+
+*Note: This is a future feature to explore after core functionality is solid. Focus on Phase 1-4 first.*
+
+### Visual Workflows as Code
+
+Users will be able to define complex multi-agent workflows using Mermaid diagrams that become executable orchestration:
+
+```typescript
+// User writes this Mermaid diagram
+const workflowMermaid = `
+graph TD
+    Start([Upgrade React to v19])
+
+    Start --> Agent1[Agent 1: Update package.json]
+    Start --> Agent2[Agent 2: Research breaking changes]
+
+    Agent1 --> Agent3[Agent 3: Fix TypeScript errors]
+    Agent2 --> Agent3
+
+    Agent3 --> Parallel{Run in parallel}
+
+    Parallel --> Agent4[Agent 4: Run unit tests]
+    Parallel --> Agent5[Agent 5: Run integration tests]
+    Parallel --> Agent6[Agent 6: Test performance]
+
+    Agent4 --> Converge{All tests pass?}
+    Agent5 --> Converge
+    Agent6 --> Converge
+
+    Converge -->|Yes| Agent7[Agent 7: Update documentation]
+    Converge -->|No| Agent8[Agent 8: Analyze failures]
+
+    Agent7 --> Success([✅ Upgrade Complete])
+    Agent8 --> Agent9[Agent 9: Attempt fixes]
+    Agent9 --> Parallel
+`;
+
+// Nebuchadnezzar automatically executes this!
+```
+
+### The Magic: Mermaid Parser to Execution Engine
+
+```typescript
+class MermaidOrchestrator {
+  async executeWorkflow(mermaid: string, context: WorkflowContext) {
+    // 1. Parse Mermaid to execution graph
+    const graph = this.parseMermaid(mermaid);
+
+    // 2. Identify parallelizable paths
+    const executionPlan = this.analyzeParallelism(graph);
+
+    // 3. Spawn containers for each agent
+    const agents = await this.spawnAgents(executionPlan);
+
+    // 4. Execute with live updates to Convex
+    return this.executeWithTracking(agents, executionPlan);
+  }
+
+  private analyzeParallelism(graph: WorkflowGraph) {
+    // Topological sort to find dependencies
+    const stages = this.topologicalSort(graph);
+
+    return stages.map(stage => ({
+      parallel: stage.nodes.filter(n => !n.dependsOn.length),
+      sequential: stage.nodes.filter(n => n.dependsOn.length > 0)
+    }));
+  }
+
+  async executeWithTracking(agents: Agent[], plan: ExecutionPlan) {
+    for (const stage of plan) {
+      // Execute parallel agents simultaneously
+      const parallelResults = await Promise.all(
+        stage.parallel.map(node =>
+          this.executeAgent(agents[node.id], node.task)
+        )
+      );
+
+      // Update live Mermaid diagram in UI
+      await this.updateDiagramState(node.id, 'completed');
+
+      // Execute sequential based on results
+      for (const node of stage.sequential) {
+        if (this.shouldExecute(node, parallelResults)) {
+          await this.executeAgent(agents[node.id], node.task);
+        }
+      }
+    }
+  }
+}
+```
+
+### Live Visualization in the UI
+
+```tsx
+// React component showing live execution
+function WorkflowVisualization({ sessionId }) {
+  const workflow = useQuery(api.workflows.getBySession, { sessionId });
+  const agentStates = useQuery(api.agents.bySession, { sessionId });
+
+  // Mermaid diagram updates in real-time!
+  const mermaidWithState = useMemo(() => {
+    return updateMermaidWithStates(workflow.mermaid, agentStates);
+  }, [workflow, agentStates]);
+
+  return (
+    <MermaidRenderer
+      chart={mermaidWithState}
+      onNodeClick={(nodeId) => showAgentDetails(nodeId)}
+    />
+  );
+}
+
+// Real-time coloring based on state
+function updateMermaidWithStates(mermaid: string, agents: Agent[]) {
+  let updated = mermaid;
+
+  agents.forEach(agent => {
+    const color = getColorForState(agent.status);
+    // Update node styling
+    updated = updated.replace(
+      `Agent${agent.id}[`,
+      `Agent${agent.id}:::${agent.status}[`
+    );
+  });
+
+  return updated + `
+    classDef completed fill:#10b981,color:#fff
+    classDef running fill:#3b82f6,color:#fff,stroke-width:4px
+    classDef failed fill:#ef4444,color:#fff
+    classDef pending fill:#6b7280,color:#fff
+  `;
+}
+```
+
+### Example Workflows Users Can Draw
+
+#### Testing Strategy
+```mermaid
+graph LR
+    Start([Test New Feature])
+    Start --> Unit[Unit Tests]
+    Start --> Security[Security Scan]
+    Start --> Perf[Performance Test]
+
+    Unit --> Integration[Integration Tests]
+    Security --> Integration
+    Perf --> LoadTest[Load Test]
+
+    Integration --> E2E[E2E Tests]
+    LoadTest --> E2E
+
+    E2E --> Deploy{All Pass?}
+    Deploy -->|Yes| Prod[Deploy to Prod]
+    Deploy -->|No| Debug[Debug & Fix]
+```
+
+#### Refactoring Flow
+```mermaid
+graph TD
+    Code([Legacy Code])
+    Code --> Analyze[Analyze Dependencies]
+    Analyze --> Split{Complexity?}
+
+    Split -->|High| Agent1[Extract Service 1]
+    Split -->|High| Agent2[Extract Service 2]
+    Split -->|Low| Simple[Simple Refactor]
+
+    Agent1 --> Test1[Test Service 1]
+    Agent2 --> Test2[Test Service 2]
+    Simple --> Test3[Test Refactored Code]
+
+    Test1 --> Integrate
+    Test2 --> Integrate
+    Test3 --> Integrate
+
+    Integrate[Integration Test]
+    Integrate --> Done([✅ Refactored])
+```
+
+### The Killer Features
+
+1. **Natural Expression**: Developers already think in flowcharts
+2. **Automatic Parallelization**: System figures out what can run simultaneously
+3. **Visual Progress**: See exactly where the workflow is in real-time
+4. **Conditional Logic**: Built-in branching based on results
+5. **Failure Handling**: Visual representation of retry/fallback paths
+6. **Reusable Templates**: Save and share workflow patterns
+
+### Integration with Claude
+
+```typescript
+// Claude can GENERATE these diagrams!
+User: "Create a workflow to safely upgrade our authentication system"
+
+Claude: "I'll create a Mermaid workflow for safely upgrading your auth system:"
+
+```mermaid
+graph TD
+    Start([Auth Upgrade])
+    Start --> Backup[Agent 1: Backup current auth]
+    Start --> ReadDocs[Agent 2: Read migration guide]
+
+    Backup --> Feature[Agent 3: Create feature flag]
+    ReadDocs --> Feature
+
+    Feature --> Parallel{Parallel Testing}
+    Parallel --> NewAuth[Agent 4: New auth flow]
+    Parallel --> OldAuth[Agent 5: Old auth flow]
+
+    NewAuth --> Compare[Agent 6: Compare results]
+    OldAuth --> Compare
+
+    Compare --> Decision{Match?}
+    Decision -->|Yes| Rollout[Agent 7: Gradual rollout]
+    Decision -->|No| Debug[Agent 8: Debug differences]
+
+    Rollout --> Monitor[Agent 9: Monitor metrics]
+    Debug --> NewAuth
+```
+
+"Should I execute this workflow?"
+
+User: "Yes!"
+
+*Nebuchadnezzar spawns 9 isolated containers and executes the entire flow*
+
+## Architectural Solutions
+
+### Container-Host Communication
+
+**Solution: Shared Mount Strategy with Clear Boundaries**
+
+```typescript
+// Container configuration for shared mounts
+class ContainerMountStrategy {
+  getMounts(projectPath: string, agentId: string) {
+    return {
+      // Project files - shared across all containers
+      project: {
+        source: projectPath,
+        target: '/workspace',
+        type: 'bind',
+        consistency: 'cached' // Better performance for reads
+      },
+
+      // Claude home directory - read-only for skills
+      claudeHome: {
+        source: '~/.claude',
+        target: '/home/claude/.claude',
+        type: 'bind',
+        readonly: true
+      },
+
+      // Temp workspace for agent-specific files
+      agentWorkspace: {
+        source: `/tmp/agents/${agentId}`,
+        target: '/tmp/agent',
+        type: 'bind'
+      },
+
+      // JSONL output directory for streaming
+      streamOutput: {
+        source: `/tmp/claude-streams/${agentId}`,
+        target: '/tmp/streams',
+        type: 'bind'
+      }
+    };
+  }
+}
+```
+
+**Benefits:**
+- Claude tools see the same files as host
+- No complex file sync needed
+- Skills work automatically
+- Clear separation of concerns
+
+### Streaming Architecture
+
+**Solution: Hybrid Streaming with JSONL Reconciliation**
+
+```typescript
+// Three-layer streaming approach
+class StreamingArchitecture {
+  // Layer 1: Direct stdout capture for immediate feedback
+  async streamFromProcess(claudeProcess: ChildProcess) {
+    claudeProcess.stdout.on('data', (chunk) => {
+      // Immediate push to Convex for real-time UI
+      this.convex.mutation(api.messages.appendChunk, {
+        content: chunk.toString(),
+        timestamp: Date.now()
+      });
+    });
+  }
+
+  // Layer 2: JSONL file watching for reliability
+  async watchJsonlOutput(agentId: string) {
+    const jsonlPath = `/tmp/claude-streams/${agentId}/output.jsonl`;
+
+    const watcher = chokidar.watch(jsonlPath, {
+      persistent: true,
+      awaitWriteFinish: {
+        stabilityThreshold: 100,
+        pollInterval: 50
+      }
+    });
+
+    watcher.on('change', async () => {
+      // Read new lines since last position
+      const newContent = await this.readNewLines(jsonlPath);
+
+      // Reconcile with Convex
+      await this.convex.mutation(api.messages.reconcileFromFile, {
+        agentId,
+        fileContent: newContent,
+        checksum: this.calculateChecksum(newContent)
+      });
+    });
+  }
+
+  // Layer 3: Final state verification
+  async verifyFinalState(agentId: string) {
+    // After process completes, do final reconciliation
+    const finalContent = await this.readCompleteFile(agentId);
+    await this.convex.mutation(api.messages.setFinalContent, {
+      agentId,
+      content: finalContent,
+      status: 'complete'
+    });
+  }
+}
+```
+
+**Benefits:**
+- Real-time feedback via stdout
+- Reliable capture via JSONL
+- Final verification ensures completeness
+- Handles all edge cases (crashes, partial writes, etc.)
+
+### YOLO Mode Implementation
+
+**No Tool Approvals - Always Run with --dangerously-skip-permissions**
+
+```typescript
+// Host CLI side - Simple YOLO mode
+class YOLOClaudeExecutor {
+  async executeClaude(prompt: string, agentId: string) {
+    const stream = await this.sdk.query(prompt, {
+      // Always YOLO mode - no approval UI needed
+      dangerouslySkipPermissions: true,
+      signal: this.abortController.signal
+    });
+
+    // Stream directly to Convex, no approval interruptions
+    for await (const chunk of stream) {
+      await this.streamToConvex(chunk);
+    }
+  }
+}
+```
+
+This simplifies the architecture significantly - no approval UI, no waiting for user input, just pure execution speed!
+
+### Resource Lifecycle Management
+
+**Solution: Automatic Cleanup with Grace Periods**
+
+```typescript
+class ResourceLifecycleManager {
+  private activeResources = new Map<string, ResourceRecord>();
+  private cleanupInterval: NodeJS.Timer;
+
+  constructor() {
+    // Run cleanup every 5 minutes
+    this.cleanupInterval = setInterval(() => this.cleanup(), 5 * 60 * 1000);
+  }
+
+  async allocateResources(agentId: string) {
+    const resources = {
+      containerId: null,
+      worktreePath: null,
+      ports: [],
+      createdAt: Date.now(),
+      lastActivity: Date.now()
+    };
+
+    // Allocate container
+    if (this.needsContainer(agentId)) {
+      resources.containerId = await this.spawnContainer(agentId);
+    }
+
+    // Allocate worktree
+    if (this.needsWorktree(agentId)) {
+      resources.worktreePath = await this.createWorktree(agentId);
+    }
+
+    // Allocate ports
+    resources.ports = await this.allocatePorts(agentId);
+
+    this.activeResources.set(agentId, resources);
+    return resources;
+  }
+
+  async cleanup() {
+    const now = Date.now();
+    const GRACE_PERIOD = 30 * 60 * 1000; // 30 minutes
+
+    for (const [agentId, resources] of this.activeResources) {
+      // Check if agent is still active in Convex
+      const agent = await this.convex.query(api.agents.get, { agentId });
+
+      if (!agent || agent.status === 'completed' || agent.status === 'failed') {
+        const inactiveDuration = now - resources.lastActivity;
+
+        if (inactiveDuration > GRACE_PERIOD) {
+          await this.releaseResources(agentId);
+        }
+      }
+    }
+  }
+
+  async releaseResources(agentId: string) {
+    const resources = this.activeResources.get(agentId);
+    if (!resources) return;
+
+    // Stop container
+    if (resources.containerId) {
+      await exec(`docker stop ${resources.containerId}`);
+      await exec(`docker rm ${resources.containerId}`);
+    }
+
+    // Remove worktree
+    if (resources.worktreePath) {
+      await exec(`git worktree remove ${resources.worktreePath} --force`);
+    }
+
+    // Release ports
+    for (const port of resources.ports) {
+      this.portAllocator.release(port);
+    }
+
+    // Clean up temp files
+    await fs.rm(`/tmp/agents/${agentId}`, { recursive: true, force: true });
+    await fs.rm(`/tmp/claude-streams/${agentId}`, { recursive: true, force: true });
+
+    this.activeResources.delete(agentId);
+  }
+
+  // Graceful shutdown
+  async shutdown() {
+    clearInterval(this.cleanupInterval);
+
+    // Release all resources
+    for (const agentId of this.activeResources.keys()) {
+      await this.releaseResources(agentId);
+    }
+  }
+}
+```
+
+### Worktree Merge Strategy
+
+**Solution: Automatic Conflict Resolution with User Review**
+
+```typescript
+class WorktreeMergeStrategy {
+  async mergeAgentWork(agentId: string, strategy: 'auto' | 'manual' = 'auto') {
+    const worktreePath = `.worktrees/agent-${agentId}`;
+
+    try {
+      // 1. Attempt automatic merge
+      await exec(`git checkout main`);
+      const mergeResult = await exec(`git merge agent-${agentId} --no-ff`, {
+        returnOutput: true,
+        allowFailure: true
+      });
+
+      if (mergeResult.success) {
+        // Clean merge - we're done
+        await this.cleanupWorktree(agentId);
+        return { success: true, conflicts: [] };
+      }
+
+      // 2. Handle merge conflicts
+      if (strategy === 'auto') {
+        // Try to auto-resolve common patterns
+        const conflicts = await this.detectConflicts();
+        const resolved = await this.autoResolveConflicts(conflicts);
+
+        if (resolved.allResolved) {
+          await exec(`git add .`);
+          await exec(`git commit -m "Auto-merged agent-${agentId} work"`);
+          await this.cleanupWorktree(agentId);
+          return { success: true, conflicts: [], autoResolved: true };
+        }
+      }
+
+      // 3. Manual resolution required
+      await this.createMergeRequest(agentId);
+      return {
+        success: false,
+        conflicts: await this.detectConflicts(),
+        mergeRequestId: agentId
+      };
+
+    } catch (error) {
+      // Abort merge on error
+      await exec(`git merge --abort`);
+      throw error;
+    }
+  }
+
+  async autoResolveConflicts(conflicts: ConflictInfo[]) {
+    let allResolved = true;
+
+    for (const conflict of conflicts) {
+      // Common auto-resolvable patterns
+      if (conflict.type === 'import_statements') {
+        // Both added imports - keep both
+        await this.resolveImports(conflict.file);
+      } else if (conflict.type === 'formatting_only') {
+        // Take the agent's version (assumed to be formatted)
+        await exec(`git checkout --theirs ${conflict.file}`);
+      } else {
+        // Can't auto-resolve
+        allResolved = false;
+      }
+    }
+
+    return { allResolved };
+  }
+}
+```
+
+### Performance Optimization
+
+**Solution: Smart Batching and Debouncing**
+
+```typescript
+class PerformanceOptimizer {
+  private messageBuffer = new Map<string, string[]>();
+  private flushTimers = new Map<string, NodeJS.Timeout>();
+
+  // Batch message updates to reduce Convex mutations
+  async appendToMessage(messageId: string, chunk: string) {
+    if (!this.messageBuffer.has(messageId)) {
+      this.messageBuffer.set(messageId, []);
+    }
+
+    this.messageBuffer.get(messageId).push(chunk);
+
+    // Clear existing timer
+    if (this.flushTimers.has(messageId)) {
+      clearTimeout(this.flushTimers.get(messageId));
+    }
+
+    // Set new timer - flush after 100ms of no new chunks
+    this.flushTimers.set(messageId, setTimeout(() => {
+      this.flushBuffer(messageId);
+    }, 100));
+
+    // Force flush if buffer is large
+    if (this.messageBuffer.get(messageId).length > 50) {
+      this.flushBuffer(messageId);
+    }
+  }
+
+  private async flushBuffer(messageId: string) {
+    const chunks = this.messageBuffer.get(messageId);
+    if (!chunks || chunks.length === 0) return;
+
+    // Single Convex mutation with all chunks
+    await this.convex.mutation(api.messages.appendBatch, {
+      messageId,
+      content: chunks.join(''),
+      chunkCount: chunks.length
+    });
+
+    // Clear buffer
+    this.messageBuffer.set(messageId, []);
+    this.flushTimers.delete(messageId);
+  }
+}
+```
+
 ## Conclusion
 
 Nebuchadnezzar represents a complete reimagining of the Claude Code UI experience, addressing fundamental architectural issues while embracing modern development practices. By leveraging Convex for state management, Next.js for unified architecture, and devcontainers for development experience, we create a robust, scalable, and maintainable platform for AI-assisted development.
 
-The migration from claudecodeui will be executed incrementally, ensuring feature parity while introducing significant improvements in performance, reliability, and developer experience. The architecture is designed to support future enhancements including multi-agent orchestration, collaborative features, and enterprise requirements.
+The implementation will be iterative and agent-driven, with no artificial timelines. We'll start simple with proven patterns and layer complexity as needed. The architecture prioritizes:
 
-This plan provides a clear roadmap for building a production-ready Claude Code UI that can scale from individual developers to large teams, while maintaining the simplicity and power that makes Claude Code compelling.
+1. **Simplicity first** - Start with the minimal viable architecture
+2. **Progressive enhancement** - Add features as they prove necessary
+3. **Single machine optimization** - Push one beefy server to its limits
+4. **Future readiness** - Architecture that can scale to distributed execution when needed
+
+With shared mounts, local Convex, and a focus on getting the fundamentals right, Nebuchadnezzar will deliver a superior Claude Code experience while maintaining the flexibility to evolve based on real-world usage.
