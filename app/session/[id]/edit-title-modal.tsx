@@ -4,7 +4,6 @@ import { useState, useRef, useEffect } from "react";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
-import { Sparkle } from "@phosphor-icons/react";
 
 interface EditTitleModalProps {
   sessionId: Id<"sessions">;
@@ -20,7 +19,6 @@ export function EditTitleModal({
   const modalRef = useRef<HTMLDialogElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [title, setTitle] = useState(currentTitle);
-  const [summarizing, setSummarizing] = useState(false);
   const updateTitle = useMutation(api.sessions.updateTitle);
 
   useEffect(() => {
@@ -38,25 +36,6 @@ export function EditTitleModal({
     }
     modalRef.current?.close();
     onClose();
-  };
-
-  const handleSummarize = async () => {
-    setSummarizing(true);
-    try {
-      const res = await fetch("/api/summarize", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId }),
-      });
-      const data = await res.json();
-      if (data.title) {
-        setTitle(data.title);
-      }
-    } catch (err) {
-      console.error("Failed to summarize:", err);
-    } finally {
-      setSummarizing(false);
-    }
   };
 
   const handleClose = () => {
@@ -81,23 +60,6 @@ export function EditTitleModal({
           placeholder="Session name..."
           maxLength={100}
         />
-        <button
-          onClick={handleSummarize}
-          disabled={summarizing}
-          className="btn btn-ghost btn-sm w-full mb-4 gap-1"
-        >
-          {summarizing ? (
-            <>
-              <span className="loading loading-spinner loading-xs" />
-              Summarizing...
-            </>
-          ) : (
-            <>
-              <Sparkle size={16} weight="duotone" />
-              Summarize with Claude
-            </>
-          )}
-        </button>
         <div className="modal-action">
           <button onClick={handleClose} className="btn btn-ghost">
             Cancel
