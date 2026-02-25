@@ -1,0 +1,42 @@
+{
+  "name": "nebuchadnezzar",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --turbopack",
+    "dev:convex": "CONVEX_AGENT_MODE=anonymous convex dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint . --ext .ts,.tsx",
+    "format": "prettier --write '**/*.{ts,tsx,json,css}'",
+    "format:check": "prettier --check '**/*.{ts,tsx,json,css}'",
+    "typecheck": "tsc --noEmit",
+    "test:e2e": "tsx test-e2e.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.56",
+    "@anthropic-ai/sdk": "^0.78.0",
+    "@phosphor-icons/react": "^2.1.10",
+    "@tailwindcss/typography": "^0.5.19",
+    "convex": "^1.21.0",
+    "daisyui": "^5.5.19",
+    "next": "^15.3.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.3.4",
+    "@tailwindcss/postcss": "^4.1.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "eslint": "^9.39.3",
+    "eslint-config-next": "^16.1.6",
+    "playwright": "^1.58.2",
+    "prettier": "^3.8.1",
+    "tailwindcss": "^4.1.0",
+    "typescript": "^5.7.0"
+  }
+}
