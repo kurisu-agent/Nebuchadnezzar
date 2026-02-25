@@ -385,85 +385,75 @@ Key benefits:
 - **Clean Host** - No Node version conflicts or package pollution on host
 - **Parallel Execution** - Multiple projects/agents without interference
 
-### 5. Hybrid Streaming Architecture
+### 5. Agent SDK Streaming Architecture
 
-Combining real-time streaming with file-based reconciliation for reliability:
+Using `@anthropic-ai/claude-agent-sdk` for structured message streaming into Convex:
 
 ```typescript
-// Using Convex's proper streaming patterns
-export const startClaudeQuery = mutation({
-  handler: async (ctx, args) => {
-    // Create placeholder message
-    const messageId = await ctx.db.insert("messages", {
-      sessionId: args.sessionId,
-      role: "assistant",
-      content: "",
-      streamStatus: "pending",
-      streamedLength: 0,
-      fileLength: 0,
-    });
+// Reference: claudecodeui feat/devcontainer-integration server/claude-sdk.js
+import { query } from "@anthropic-ai/claude-agent-sdk";
 
-    // Schedule internal action for streaming
-    await ctx.scheduler.runAfter(0, internal.claude.streamFromHost, {
-      messageId,
-      prompt: args.prompt,
-      useContainer: args.useContainer
-    });
+// Next.js API route — starts a Claude query via Agent SDK
+export async function POST(req: Request) {
+  const { sessionId, prompt } = await req.json();
 
-    return messageId;
+  // Create placeholder assistant message in Convex
+  const messageId = await convex.mutation(api.messages.createAssistant, { sessionId });
+
+  // SDK options — YOLO mode, no approval UI
+  const sdkOptions = {
+    permissionMode: "bypassPermissions" as const,
+    systemPrompt: { type: "preset" as const, preset: "claude_code" },
+    settingSources: ["project", "user", "local"] as const,
+  };
+
+  // Resume existing session or start new one
+  const session = await convex.query(api.sessions.get, { id: sessionId });
+  if (session.claudeSessionId) {
+    sdkOptions.resume = session.claudeSessionId;
   }
-});
 
-export const streamFromHost = internalAction({
-  handler: async (ctx, args) => {
-    // Call Host CLI for streaming response
-    const response = await fetch("http://host:3002/claude/stream", {
-      method: "POST",
-      body: JSON.stringify(args)
-    });
+  // SDK returns async generator of structured messages
+  const queryInstance = query({ prompt, options: sdkOptions });
+  let fullContent = "";
+  let sdkSessionId: string | undefined;
 
-    const reader = response.body.getReader();
-    let accumulated = "";
+  for await (const message of queryInstance) {
+    // Extract session ID from first message
+    if (message.session_id && !sdkSessionId) {
+      sdkSessionId = message.session_id;
+      await convex.mutation(api.sessions.setClaudeSessionId, {
+        id: sessionId,
+        claudeSessionId: sdkSessionId,
+      });
+    }
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      const chunk = new TextDecoder().decode(value);
-      accumulated += chunk;
-
-      // Progressive updates via internal mutation
-      await ctx.runMutation(internal.claude.appendChunk, {
-        messageId: args.messageId,
-        content: accumulated,
-        streamedLength: accumulated.length
+    // Accumulate assistant text from structured messages
+    if (message.type === "assistant" && message.content) {
+      fullContent += message.content;
+      await convex.mutation(api.messages.updateContent, {
+        messageId,
+        content: fullContent,
+        streaming: true,
       });
     }
   }
-});
 
-// File watcher reconciliation for reliability
-export const reconcileFromFile = internalMutation({
-  handler: async (ctx, args) => {
-    const message = await ctx.db.get(args.messageId);
-
-    // Only update if file has more content than stream
-    if (args.fileLength > message.streamedLength) {
-      await ctx.db.patch(args.messageId, {
-        content: args.fileContent,
-        fileLength: args.fileLength,
-        streamStatus: "synced"
-      });
-    }
-  }
-});
+  // Final update — mark streaming complete
+  await convex.mutation(api.messages.updateContent, {
+    messageId,
+    content: fullContent,
+    streaming: false,
+  });
+}
 ```
 
-This gives us:
-- **Real-time streaming UX** - Immediate feedback
-- **File-based reliability** - Never lose data
-- **Single Convex document** - Frontend stays simple
-- **Automatic reconciliation** - Best of both worlds
+Key advantages over CLI spawning:
+- **Structured messages** — no stdout parsing, each message is a typed object
+- **Session management** — `resume` option and `instance.interrupt()` for abort
+- **Token tracking** — `result.modelUsage` gives input/output/total tokens
+- **Devcontainer support** — `pathToClaudeCodeExecutable` redirects through proxy script
+- **Error handling** — JavaScript try/catch with typed errors, not exit codes
 
 ### 6. Perfect Isolation: Git Worktrees + Containers
 
@@ -1322,65 +1312,66 @@ class ContainerMountStrategy {
 
 ### Streaming Architecture
 
-**Solution: Hybrid Streaming with JSONL Reconciliation**
+**Solution: Agent SDK Async Generator → Convex Mutations**
+
+The Agent SDK's `query()` returns an async generator that yields structured message objects. Each message is pushed to Convex in real-time. No stdout parsing, no JSONL file watching — the SDK handles all of that internally.
 
 ```typescript
-// Three-layer streaming approach
-class StreamingArchitecture {
-  // Layer 1: Direct stdout capture for immediate feedback
-  async streamFromProcess(claudeProcess: ChildProcess) {
-    claudeProcess.stdout.on('data', (chunk) => {
-      // Immediate push to Convex for real-time UI
-      this.convex.mutation(api.messages.appendChunk, {
-        content: chunk.toString(),
-        timestamp: Date.now()
-      });
-    });
-  }
+// Reference: claudecodeui feat/devcontainer-integration server/claude-sdk.js
+import { query } from "@anthropic-ai/claude-agent-sdk";
 
-  // Layer 2: JSONL file watching for reliability
-  async watchJsonlOutput(agentId: string) {
-    const jsonlPath = `/tmp/claude-streams/${agentId}/output.jsonl`;
+class AgentSDKStreamer {
+  // Stream structured messages from SDK directly to Convex
+  async streamToConvex(prompt: string, messageId: string, options: SDKOptions) {
+    const queryInstance = query({ prompt, options });
+    let fullContent = "";
 
-    const watcher = chokidar.watch(jsonlPath, {
-      persistent: true,
-      awaitWriteFinish: {
-        stabilityThreshold: 100,
-        pollInterval: 50
+    for await (const message of queryInstance) {
+      // Each message is a structured object — not raw text
+      switch (message.type) {
+        case "assistant":
+          fullContent += message.content ?? "";
+          await this.convex.mutation(api.messages.updateContent, {
+            messageId,
+            content: fullContent,
+            streaming: true,
+          });
+          break;
+
+        case "result":
+          // Extract token usage from final result
+          if (message.modelUsage) {
+            await this.convex.mutation(api.sessions.updateTokenUsage, {
+              sessionId: options.sessionId,
+              input: message.modelUsage.input_tokens,
+              output: message.modelUsage.output_tokens,
+            });
+          }
+          break;
       }
-    });
+    }
 
-    watcher.on('change', async () => {
-      // Read new lines since last position
-      const newContent = await this.readNewLines(jsonlPath);
-
-      // Reconcile with Convex
-      await this.convex.mutation(api.messages.reconcileFromFile, {
-        agentId,
-        fileContent: newContent,
-        checksum: this.calculateChecksum(newContent)
-      });
+    // Mark streaming complete
+    await this.convex.mutation(api.messages.updateContent, {
+      messageId,
+      content: fullContent,
+      streaming: false,
     });
   }
 
-  // Layer 3: Final state verification
-  async verifyFinalState(agentId: string) {
-    // After process completes, do final reconciliation
-    const finalContent = await this.readCompleteFile(agentId);
-    await this.convex.mutation(api.messages.setFinalContent, {
-      agentId,
-      content: finalContent,
-      status: 'complete'
-    });
+  // Abort via SDK instance (not process kill)
+  async abort(sessionInstance: QueryInstance) {
+    sessionInstance.interrupt();
   }
 }
 ```
 
 **Benefits:**
-- Real-time feedback via stdout
-- Reliable capture via JSONL
-- Final verification ensures completeness
-- Handles all edge cases (crashes, partial writes, etc.)
+- Structured messages eliminate stdout/stderr parsing
+- Token usage tracking built into SDK result messages
+- Abort via `interrupt()` instead of `SIGTERM`
+- Session resume via `options.resume` instead of CLI flags
+- Devcontainer support via `pathToClaudeCodeExecutable` option
 
 ### YOLO Mode Implementation
 
