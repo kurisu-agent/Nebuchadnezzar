@@ -20,6 +20,12 @@ npm run dev          # Next.js on :3000
 npm run dev:convex   # Convex local backend on :3210 (anonymous mode)
 ```
 
+### IMPORTANT: Dev server rules
+
+- **NEVER run `npm run build`** or `next build`. This is dev-only — we only use the dev server.
+- **Do NOT kill or restart the dev servers** unless they have actually crashed. They run in the background. If you get an Internal Server Error, check if the servers are still running first before restarting.
+- If you need to restart, kill the old process on the port first (`lsof -ti :3000 | xargs kill`), then start fresh.
+
 ### Env vars (.env.local)
 
 - `CONVEX_URL` — localhost URL for server-side (API routes)
