@@ -60,7 +60,7 @@ export function SessionDrawer({
           aria-label="close sidebar"
           className="drawer-overlay"
         />
-        <div className="bg-base-200 min-h-full w-72 flex flex-col">
+        <div className="bg-base-200 h-full w-72 flex flex-col">
           <div className="p-4 pb-3 flex items-center justify-between shrink-0">
             <span className="text-sm font-semibold opacity-70">Sessions</span>
             <button
@@ -71,7 +71,7 @@ export function SessionDrawer({
               New
             </button>
           </div>
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto bg-base-300/40">
             {sessions && sessions.length > 0 && (
               <ul className="list">
                 {sessions.map((session) => (

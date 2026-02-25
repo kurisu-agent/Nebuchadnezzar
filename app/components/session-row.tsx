@@ -2,11 +2,7 @@
 
 import { Id } from "@/convex/_generated/dataModel";
 import { useEffect, useState } from "react";
-import {
-  ChatCircleDots,
-  Trash,
-  CircleNotch,
-} from "@phosphor-icons/react";
+import { Trash } from "@phosphor-icons/react";
 
 export function useRelativeTime(timestamp: number) {
   const [now, setNow] = useState(() => Date.now());
@@ -51,34 +47,13 @@ export function SessionRow({
   return (
     <li
       className={`list-row cursor-pointer transition-colors active:bg-base-300 ${
-        session.isStreaming
-          ? "bg-primary/10"
-          : active
-            ? "bg-base-300/60"
-            : ""
+        session.isStreaming ? "bg-primary/10" : active ? "bg-base-300/60" : ""
       }`}
       onClick={onNavigate}
     >
-      <div className="flex items-center justify-center w-8">
-        {session.isStreaming ? (
-          <CircleNotch
-            size={18}
-            weight="bold"
-            className="text-primary animate-spin"
-          />
-        ) : (
-          <ChatCircleDots size={18} weight="duotone" className="opacity-40" />
-        )}
-      </div>
       <div className="list-col-grow">
-        <div className="text-sm">{session.title}</div>
-        <div className="text-xs opacity-50">
-          {session.isStreaming ? (
-            <span className="text-primary">Streaming...</span>
-          ) : (
-            timeAgo
-          )}
-        </div>
+        <div className="text-sm line-clamp-2">{session.title}</div>
+        <div className="text-xs opacity-50">{timeAgo}</div>
       </div>
       <button
         className="btn btn-square btn-ghost btn-sm"
