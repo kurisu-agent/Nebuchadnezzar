@@ -1,0 +1,62 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+@plugin "daisyui" {
+  themes: dark --default;
+}
+
+/* Streaming text animation */
+@keyframes token-fade {
+  from {
+    opacity: 0;
+    filter: blur(3px);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+  }
+}
+
+.streaming-token {
+  animation: token-fade 0.25s ease forwards;
+}
+
+/* Subtle glow for the brand */
+.brand-glow {
+  text-shadow: 0 0 24px oklch(var(--p) / 0.3);
+}
+
+/* Session list row hover */
+.list-row {
+  transition: background-color 0.15s ease;
+}
+
+/* Smooth chat entry */
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.chat-animate {
+  animation: slide-up 0.2s ease-out;
+}
+
+/* Scrollbar styling for dark theme */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: oklch(var(--bc) / 0.15);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: oklch(var(--bc) / 0.25);
+}
