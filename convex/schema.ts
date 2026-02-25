@@ -5,6 +5,7 @@ export default defineSchema({
   sessions: defineTable({
     title: v.string(),
     claudeSessionId: v.optional(v.string()),
+    deletedAt: v.optional(v.number()),
     createdAt: v.number(),
   }),
   messages: defineTable({
@@ -12,6 +13,8 @@ export default defineSchema({
     role: v.union(v.literal("user"), v.literal("assistant")),
     content: v.string(),
     streaming: v.boolean(),
+    cancelled: v.optional(v.boolean()),
+    error: v.optional(v.boolean()),
     steps: v.optional(v.array(v.string())),
     createdAt: v.number(),
   }).index("by_session", ["sessionId", "createdAt"]),
