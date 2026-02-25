@@ -11,13 +11,51 @@ const convex = new ConvexHttpClient(
 export const dynamic = "force-dynamic";
 
 /**
+ * Extract as much detail as possible from an error for display.
+ * Returns a JSON string with message, code, stderr, cause, stack, etc.
+ */
+function serializeError(err: unknown): string {
+  if (!(err instanceof Error)) return String(err);
+
+  const info: Record<string, unknown> = { message: err.message };
+
+  // Capture any extra properties the SDK sets (code, status, stderr, etc.)
+  for (const key of Object.getOwnPropertyNames(err)) {
+    if (key === "message" || key === "stack") continue;
+    info[key] = (err as Record<string, unknown>)[key];
+  }
+
+  // Capture cause chain
+  if (err.cause) {
+    info.cause =
+      err.cause instanceof Error
+        ? { message: err.cause.message, ...Object.fromEntries(
+            Object.getOwnPropertyNames(err.cause)
+              .filter((k) => k !== "stack")
+              .map((k) => [k, (err.cause as Record<string, unknown>)[k]]),
+          )}
+        : String(err.cause);
+  }
+
+  // Include stack for debugging
+  if (err.stack) {
+    info.stack = err.stack;
+  }
+
+  return JSON.stringify(info, null, 2);
+}
+
+/**
  * Extract text content from an SDKAssistantMessage's BetaMessage content blocks.
  */
 function extractText(message: SDKMessage): string | null {
   if (message.type !== "assistant") return null;
   const blocks = message.message.content;
   return blocks
-    .filter((b): b is { type: "text"; text: string } => b.type === "text")
+    .filter(
+      (b: { type: string }): b is { type: "text"; text: string } =>
+        b.type === "text",
+    )
     .map((b) => b.text)
     .join("");
 }
@@ -40,7 +78,10 @@ function extractSteps(message: SDKMessage): string[] {
         name: string;
         input: Record<string, unknown>;
       };
-      const path = (tb.input.file_path || tb.input.path || tb.input.command || "") as string;
+      const path = (tb.input.file_path ||
+        tb.input.path ||
+        tb.input.command ||
+        "") as string;
       const label = path ? `${tb.name}: ${path}` : tb.name;
       steps.push(`tool:${label}`);
     }
@@ -212,14 +253,15 @@ export async function POST(req: Request) {
       activeStreams.delete(sessionId);
       return Response.json({ ok: true, cancelled: true });
     }
-    const errorMessage = err instanceof Error ? err.message : String(err);
-    console.error("[claude sdk error]", errorMessage);
+    const errorDetail = serializeError(err);
+    console.error("[claude sdk error]", errorDetail);
     await convex.mutation(api.messages.updateContent, {
       messageId,
-      content: `Error: ${errorMessage}`,
+      content: errorDetail,
       streaming: false,
+      error: true,
     });
-    return Response.json({ error: errorMessage }, { status: 500 });
+    return Response.json({ error: errorDetail }, { status: 500 });
   } finally {
     activeStreams.delete(sessionId);
   }

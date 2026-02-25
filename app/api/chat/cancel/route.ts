@@ -16,8 +16,12 @@ export async function POST(req: Request) {
 
   const stream = activeStreams.get(sessionId);
   if (!stream) {
-    // Already finished or not found — nothing to cancel
-    return Response.json({ ok: true, alreadyDone: true });
+    // No active stream — but the DB may still have orphaned streaming messages
+    // (e.g. server restarted while streaming). Clean those up.
+    const count = await convex.mutation(api.messages.cancelStreamingBySession, {
+      sessionId,
+    });
+    return Response.json({ ok: true, alreadyDone: true, cleaned: count });
   }
 
   // 1. Signal the streaming loop to stop flushing
