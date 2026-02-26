@@ -22,7 +22,7 @@
     "dev:convex": "CONVEX_AGENT_MODE=anonymous convex dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint . --ext .ts,.tsx",
+    "lint": "eslint .",
     "format": "prettier --write '**/*.{ts,tsx,json,css}'",
     "format:check": "prettier --check '**/*.{ts,tsx,json,css}'",
     "typecheck": "tsc --noEmit",
