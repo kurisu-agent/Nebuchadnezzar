@@ -106,5 +106,5 @@ npm run dev:convex   # Convex local backend on :3210 (anonymous mode)
 npm run dev          # Next.js on :3000 (Turbopack)
 
 # Access via Coder proxy:
-# https://3000--dev--neb--example.coder.example.com/
+# https://3000--<workspace>.<coder-host>/
 ```

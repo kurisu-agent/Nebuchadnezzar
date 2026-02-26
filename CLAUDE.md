@@ -11,7 +11,7 @@ Claude Code UI — Next.js 15 + Convex + Claude Agent SDK.
 
 ## Dev Environment
 
-Runs on Coder. Ports are proxied as `https://<port>--dev--neb--example.coder.example.com/`.
+Runs on Coder. Ports are proxied as `https://<port>--<workspace>.<coder-host>/`.
 
 ### Starting dev
 
