@@ -4,8 +4,10 @@ import { v } from "convex/values";
 export default defineSchema({
   sessions: defineTable({
     title: v.string(),
+    customTitle: v.optional(v.boolean()),
     claudeSessionId: v.optional(v.string()),
     deletedAt: v.optional(v.number()),
+    lastSeenAt: v.optional(v.number()),
     createdAt: v.number(),
   }),
   messages: defineTable({
@@ -16,11 +18,24 @@ export default defineSchema({
     cancelled: v.optional(v.boolean()),
     error: v.optional(v.boolean()),
     steps: v.optional(v.array(v.string())),
+    attachments: v.optional(v.array(v.id("uploads"))),
     createdAt: v.number(),
   }).index("by_session", ["sessionId", "createdAt"]),
   queuedMessages: defineTable({
     sessionId: v.id("sessions"),
     content: v.string(),
+    attachments: v.optional(v.array(v.id("uploads"))),
     createdAt: v.number(),
   }).index("by_session", ["sessionId", "createdAt"]),
+  uploads: defineTable({
+    storageId: v.id("_storage"),
+    thumbnailStorageId: v.optional(v.id("_storage")),
+    filename: v.string(),
+    mimeType: v.string(),
+    size: v.number(),
+    sessionId: v.optional(v.id("sessions")),
+    createdAt: v.number(),
+  })
+    .index("by_session", ["sessionId", "createdAt"])
+    .index("by_created", ["createdAt"]),
 });
