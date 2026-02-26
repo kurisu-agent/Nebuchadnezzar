@@ -36,11 +36,6 @@ export default function RootLayout({
     <html lang="en" className="dark">
       <body className="bg-base-100 text-base-content select-none">
         <ConvexClientProvider>{children}</ConvexClientProvider>
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `if("serviceWorker"in navigator)navigator.serviceWorker.register("/sw.js")`,
-          }}
-        />
       </body>
     </html>
   );

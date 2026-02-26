@@ -1,8 +1,31 @@
 "use client";
 
-import { Bell, Globe, ShieldCheck, Wrench } from "@phosphor-icons/react";
+import {
+  ArrowsOut,
+  Bell,
+  Globe,
+  ShieldCheck,
+  Wrench,
+} from "@phosphor-icons/react";
+import { useCallback, useEffect, useState } from "react";
 
 export default function SettingsPage() {
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    const onChange = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", onChange);
+    return () => document.removeEventListener("fullscreenchange", onChange);
+  }, []);
+
+  const toggleFullscreen = useCallback(() => {
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    } else {
+      document.documentElement.requestFullscreen();
+    }
+  }, []);
+
   return (
     <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-3">
       <div className="alert alert-info text-xs">
@@ -10,6 +33,25 @@ export default function SettingsPage() {
         <span>
           This page is under construction. Settings are not yet functional.
         </span>
+      </div>
+
+      {/* Display */}
+      <div className="card bg-base-200 card-sm">
+        <div className="card-body py-3">
+          <h2 className="card-title text-sm opacity-60 gap-2">
+            <ArrowsOut size={16} weight="duotone" />
+            Display
+          </h2>
+          <div className="flex items-center justify-between">
+            <span className="text-sm">Fullscreen mode</span>
+            <input
+              type="checkbox"
+              className="toggle toggle-sm toggle-primary"
+              checked={isFullscreen}
+              onChange={toggleFullscreen}
+            />
+          </div>
+        </div>
       </div>
 
       <div className="card bg-base-200 card-sm">
