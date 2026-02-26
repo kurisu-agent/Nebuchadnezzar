@@ -7,20 +7,49 @@ export const list = query({
     const active = sessions.filter((s) => !s.deletedAt);
     const enriched = await Promise.all(
       active.map(async (session) => {
-        const messages = await ctx.db
+        const latestMsg = await ctx.db
           .query("messages")
           .withIndex("by_session", (q) => q.eq("sessionId", session._id))
           .order("desc")
           .first();
+        const lastActivity = latestMsg?.createdAt ?? session.createdAt;
+        const hasUnseen =
+          latestMsg?.role === "assistant" &&
+          !latestMsg.streaming &&
+          latestMsg.createdAt > (session.lastSeenAt ?? session.createdAt);
         return {
           ...session,
-          lastActivity: messages?.createdAt ?? session.createdAt,
-          isStreaming: messages?.streaming ?? false,
+          lastActivity,
+          isStreaming: latestMsg?.streaming ?? false,
+          hasUnseen,
         };
       }),
     );
     // Sort by most recent activity first
     return enriched.sort((a, b) => b.lastActivity - a.lastActivity);
+  },
+});
+
+export const hasUnseen = query({
+  args: { exclude: v.optional(v.id("sessions")) },
+  handler: async (ctx, args) => {
+    const sessions = await ctx.db.query("sessions").collect();
+    for (const session of sessions) {
+      if (session.deletedAt) continue;
+      if (args.exclude && session._id === args.exclude) continue;
+      const latest = await ctx.db
+        .query("messages")
+        .withIndex("by_session", (q) => q.eq("sessionId", session._id))
+        .order("desc")
+        .first();
+      if (
+        latest?.role === "assistant" &&
+        !latest.streaming &&
+        latest.createdAt > (session.lastSeenAt ?? session.createdAt)
+      )
+        return true;
+    }
+    return false;
   },
 });
 
@@ -43,9 +72,11 @@ export const get = query({
 export const create = mutation({
   args: { title: v.optional(v.string()) },
   handler: async (ctx, args) => {
+    const now = Date.now();
     return await ctx.db.insert("sessions", {
       title: args.title ?? "New Session",
-      createdAt: Date.now(),
+      createdAt: now,
+      lastSeenAt: now,
     });
   },
 });
@@ -53,7 +84,26 @@ export const create = mutation({
 export const updateTitle = mutation({
   args: { id: v.id("sessions"), title: v.string() },
   handler: async (ctx, args) => {
+    await ctx.db.patch(args.id, { title: args.title, customTitle: true });
+  },
+});
+
+export const autoTitle = mutation({
+  args: { id: v.id("sessions"), title: v.string() },
+  handler: async (ctx, args) => {
+    const session = await ctx.db.get(args.id);
+    if (!session || session.customTitle) return;
     await ctx.db.patch(args.id, { title: args.title });
+  },
+});
+
+export const clearCustomTitle = mutation({
+  args: { id: v.id("sessions") },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.id, {
+      customTitle: undefined,
+      title: "Generating title...",
+    });
   },
 });
 
@@ -64,10 +114,27 @@ export const setClaudeSessionId = mutation({
   },
 });
 
+export const markSeen = mutation({
+  args: { id: v.id("sessions") },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.id, { lastSeenAt: Date.now() });
+  },
+});
+
 export const remove = mutation({
   args: { id: v.id("sessions") },
   handler: async (ctx, args) => {
     await ctx.db.patch(args.id, { deletedAt: Date.now() });
+  },
+});
+
+export const removeMany = mutation({
+  args: { ids: v.array(v.id("sessions")) },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    for (const id of args.ids) {
+      await ctx.db.patch(id, { deletedAt: now });
+    }
   },
 });
 
@@ -95,6 +162,52 @@ export const permanentDelete = mutation({
     for (const q of queued) {
       await ctx.db.delete(q._id);
     }
+    const uploads = await ctx.db
+      .query("uploads")
+      .withIndex("by_session", (q) => q.eq("sessionId", args.id))
+      .collect();
+    for (const upload of uploads) {
+      await ctx.storage.delete(upload.storageId);
+      if (upload.thumbnailStorageId) {
+        await ctx.storage.delete(upload.thumbnailStorageId);
+      }
+      await ctx.db.delete(upload._id);
+    }
     await ctx.db.delete(args.id);
+  },
+});
+
+export const permanentDeleteAll = mutation({
+  handler: async (ctx) => {
+    const sessions = await ctx.db.query("sessions").collect();
+    const deleted = sessions.filter((s) => s.deletedAt);
+    for (const session of deleted) {
+      const messages = await ctx.db
+        .query("messages")
+        .withIndex("by_session", (q) => q.eq("sessionId", session._id))
+        .collect();
+      for (const message of messages) {
+        await ctx.db.delete(message._id);
+      }
+      const queued = await ctx.db
+        .query("queuedMessages")
+        .withIndex("by_session", (q) => q.eq("sessionId", session._id))
+        .collect();
+      for (const q of queued) {
+        await ctx.db.delete(q._id);
+      }
+      const uploads = await ctx.db
+        .query("uploads")
+        .withIndex("by_session", (q) => q.eq("sessionId", session._id))
+        .collect();
+      for (const upload of uploads) {
+        await ctx.storage.delete(upload.storageId);
+        if (upload.thumbnailStorageId) {
+          await ctx.storage.delete(upload.thumbnailStorageId);
+        }
+        await ctx.db.delete(upload._id);
+      }
+      await ctx.db.delete(session._id);
+    }
   },
 });
