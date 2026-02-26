@@ -4,9 +4,7 @@
 
 **The Mobile AIDE**
 
-*Chat with Claude Code from your phone — real-time streaming, session management, and a built-in config editor.*
-
-*Built entirely from a phone using Claude Code — no laptop involved.*
+*A mobile-first AI development environment — dogfooded into existence from a phone, no laptop required.*
 
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 [![Next.js 15](https://img.shields.io/badge/Next.js-15-black)](https://nextjs.org/)
@@ -167,6 +165,10 @@ The Agent SDK officially recommends API key authentication via `ANTHROPIC_API_KE
 Anthropic's [February 2026 policy clarification](https://www.theregister.com/2026/02/20/anthropic_clarifies_ban_third_party_claude_access/) targeted third-party tools that extract OAuth tokens to serve multiple users — not individuals running Claude Code on their own machines. The [legal docs](https://code.claude.com/docs/en/legal-and-compliance) frame subscription limits around "ordinary, individual usage," which is exactly how Nebuchadnezzar is designed to be used: a personal interface to your own Claude Code installation.
 
 **This project is intended for personal use only.** If you plan to host it for others, use API key authentication instead.
+
+## Acknowledgements
+
+Inspired by [Claude Code UI](https://github.com/siteboon/claudecodeui) by siteboon — the original open-source web UI for Claude Code. Nebuchadnezzar is a ground-up rewrite with a different stack and a mobile-first focus, but that project lit the spark.
 
 ## License
 
