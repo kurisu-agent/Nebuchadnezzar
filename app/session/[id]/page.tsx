@@ -10,7 +10,7 @@ import React, {
   useCallback,
   useMemo,
 } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -25,9 +25,281 @@ import {
   Terminal,
   Warning,
   ArrowClockwise,
+  ImageSquare,
+} from "@phosphor-icons/react";
+import {
+  TransformWrapper,
+  TransformComponent,
+} from "react-zoom-pan-pinch";
+import {
+  ArrowCounterClockwise,
+  DownloadSimple,
+  Paperclip,
 } from "@phosphor-icons/react";
 import { EditTitleModal } from "./edit-title-modal";
 import { SessionDrawer } from "@/app/components/session-drawer";
+import { useUpload, proxyStorageUrl } from "@/app/hooks/use-upload";
+
+/** Format bytes into a human-readable string. */
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/**
+ * Full-screen image viewer modal with pinch-to-zoom (contained to image),
+ * metadata bar (filename link, size, type, date), and zoom controls.
+ */
+function ImageViewer({
+  src,
+  alt,
+  uploadId,
+  meta,
+  onClose,
+}: {
+  src: string;
+  alt: string;
+  uploadId: string;
+  meta?: {
+    filename: string;
+    size: number;
+    mimeType: string;
+    createdAt: number;
+  };
+  onClose: () => void;
+}) {
+  const [rotation, setRotation] = useState(0);
+  const serveUrl = `/api/uploads/serve?id=${uploadId}`;
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/95 flex flex-col">
+      {/* Top bar: close + metadata + actions */}
+      <div className="shrink-0 flex items-center gap-2 px-3 py-2 bg-black/60">
+        <button
+          onClick={onClose}
+          className="btn btn-circle btn-sm btn-ghost text-white opacity-70 active:opacity-100"
+          aria-label="Close"
+        >
+          <X size={20} weight="bold" />
+        </button>
+        {meta && (
+          <div className="flex-1 min-w-0 flex flex-col gap-0.5">
+            <a
+              href={serveUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm text-white/90 font-medium truncate link link-hover"
+            >
+              {meta.filename}
+            </a>
+            <div className="flex items-center gap-2 text-[10px] text-white/40">
+              <span>{formatFileSize(meta.size)}</span>
+              <span>·</span>
+              <span>{meta.mimeType.split("/")[1]?.toUpperCase()}</span>
+              <span>·</span>
+              <span>
+                {new Date(meta.createdAt).toLocaleDateString(undefined, {
+                  month: "short",
+                  day: "numeric",
+                  year: "numeric",
+                })}
+              </span>
+            </div>
+          </div>
+        )}
+        <button
+          onClick={() => setRotation((r) => r - 90)}
+          className="btn btn-circle btn-sm btn-ghost text-white opacity-50 active:opacity-100"
+          aria-label="Rotate"
+        >
+          <ArrowCounterClockwise size={18} weight="bold" />
+        </button>
+        <a
+          href={serveUrl}
+          download={meta?.filename}
+          className="btn btn-circle btn-sm btn-ghost text-white opacity-50 active:opacity-100"
+          aria-label="Download"
+        >
+          <DownloadSimple size={18} weight="bold" />
+        </a>
+      </div>
+
+      {/* Zoomable image area */}
+      <div className="flex-1 min-h-0 overflow-hidden">
+        <TransformWrapper
+          key={rotation}
+          initialScale={1}
+          minScale={0.5}
+          maxScale={8}
+          centerOnInit
+          doubleClick={{ mode: "toggle", step: 2 }}
+          wheel={{ step: 0.1 }}
+          pinch={{ step: 5 }}
+        >
+          <TransformComponent
+            wrapperStyle={{
+              width: "100%",
+              height: "100%",
+              overflow: "hidden",
+            }}
+          >
+            <img
+              src={src}
+              alt={alt}
+              style={{ transform: `rotate(${rotation}deg)` }}
+              className="select-none transition-transform duration-200"
+              draggable={false}
+            />
+          </TransformComponent>
+        </TransformWrapper>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Renders inline thumbnail images for a message with attachments.
+ * Tapping a thumbnail opens a full-size viewer with zoom + metadata.
+ */
+function MessageImages({ attachmentIds }: { attachmentIds: Id<"uploads">[] }) {
+  const uploads = useQuery(api.uploads.getMany, { uploadIds: attachmentIds });
+  const [viewingId, setViewingId] = useState<string | null>(null);
+
+  if (!uploads) return null;
+
+  const viewingUpload = viewingId
+    ? uploads.find((u) => u?._id === viewingId)
+    : null;
+
+  return (
+    <>
+      <div className="flex gap-1.5 flex-wrap mb-2">
+        {uploads
+          .filter(Boolean)
+          .map(
+            (upload) =>
+              upload && (
+                <img
+                  key={upload._id}
+                  src={proxyStorageUrl(upload.thumbnailUrl ?? upload.url)}
+                  alt={upload.filename}
+                  className="rounded-lg max-w-[200px] max-h-[150px] object-cover cursor-pointer active:opacity-80 transition-opacity"
+                  onClick={() => setViewingId(upload._id)}
+                />
+              ),
+          )}
+      </div>
+      {viewingUpload && (
+        <ImageViewer
+          src={proxyStorageUrl(viewingUpload.url) ?? ""}
+          alt={viewingUpload.filename}
+          uploadId={viewingUpload._id}
+          meta={{
+            filename: viewingUpload.filename,
+            size: viewingUpload.size,
+            mimeType: viewingUpload.mimeType,
+            createdAt: viewingUpload.createdAt,
+          }}
+          onClose={() => setViewingId(null)}
+        />
+      )}
+    </>
+  );
+}
+
+/**
+ * Navbar dropdown showing all image attachments in the session.
+ * Tapping a thumbnail scrolls to the message that contains it.
+ */
+function AttachmentsPopover({
+  messages,
+  scrollContainer,
+}: {
+  messages: { _id: string; attachments?: string[] }[];
+  scrollContainer: React.RefObject<HTMLDivElement | null>;
+}) {
+  // Collect all attachment IDs mapped to their parent message ID
+  const attachmentMap = useMemo(() => {
+    const map: { uploadId: string; messageId: string }[] = [];
+    for (const m of messages) {
+      if (m.attachments && m.attachments.length > 0) {
+        for (const a of m.attachments) {
+          map.push({ uploadId: a, messageId: m._id });
+        }
+      }
+    }
+    return map;
+  }, [messages]);
+
+  const allUploadIds = useMemo(
+    () => attachmentMap.map((a) => a.uploadId) as Id<"uploads">[],
+    [attachmentMap],
+  );
+
+  const uploads = useQuery(
+    api.uploads.getMany,
+    allUploadIds.length > 0 ? { uploadIds: allUploadIds } : "skip",
+  );
+
+  if (attachmentMap.length === 0) return null;
+
+  const scrollToMessage = (messageId: string) => {
+    const el = document.getElementById(`msg-${messageId}`);
+    if (el && scrollContainer.current) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.classList.add("highlight-flash");
+      setTimeout(() => el.classList.remove("highlight-flash"), 1000);
+    }
+    // Close the dropdown by blurring
+    (document.activeElement as HTMLElement)?.blur();
+  };
+
+  return (
+    <div className="dropdown dropdown-end">
+      <button
+        tabIndex={0}
+        className="btn btn-ghost btn-sm btn-square"
+        aria-label="Attachments"
+      >
+        <Paperclip size={18} weight="bold" />
+      </button>
+      <div
+        tabIndex={0}
+        className="dropdown-content z-10 bg-base-200 rounded-box shadow-lg p-2 mt-1 w-56 max-h-64 overflow-y-auto"
+      >
+        <span className="text-[10px] opacity-40 uppercase tracking-wide px-1">
+          Attachments
+        </span>
+        <div className="flex flex-col gap-1 mt-1">
+          {attachmentMap.map((a, i) => {
+            const upload = uploads?.[i];
+            return (
+              <button
+                key={`${a.uploadId}-${i}`}
+                className="flex items-center gap-2 rounded-lg px-2 py-1.5 active:bg-base-300 transition-colors text-left w-full"
+                onClick={() => scrollToMessage(a.messageId)}
+              >
+                {upload ? (
+                  <img
+                    src={proxyStorageUrl(upload.thumbnailUrl ?? upload.url)}
+                    alt={upload.filename}
+                    className="w-8 h-8 rounded object-cover shrink-0"
+                  />
+                ) : (
+                  <div className="w-8 h-8 rounded skeleton shrink-0" />
+                )}
+                <span className="text-xs truncate opacity-70">
+                  {upload?.filename ?? "Loading..."}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 /**
  * Recursively wraps string children in animated spans so new words fade in.
@@ -203,14 +475,27 @@ function formatDateLabel(timestamp: number): string {
   const date = new Date(timestamp);
   const now = new Date();
 
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const startOfDate = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  const startOfToday = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+  ).getTime();
+  const startOfDate = new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
+  ).getTime();
   const diffDays = Math.floor((startOfToday - startOfDate) / 86400000);
 
   if (diffDays === 0) return "";
   if (diffDays === 1) return "Yesterday";
-  if (diffDays < 7) return date.toLocaleDateString(undefined, { weekday: "long" });
-  return date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  if (diffDays < 7)
+    return date.toLocaleDateString(undefined, { weekday: "long" });
+  return date.toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
 }
 
 /** Formats a timestamp as a short local time like "2:34 PM". */
@@ -314,8 +599,8 @@ function ErrorMessage({
   }
 
   return (
-    <div className="alert alert-error flex-col items-start gap-1 text-sm py-2 px-3">
-      <div className="flex items-center gap-2 w-full">
+    <div className="flex flex-col gap-1 w-full">
+      <div className="alert alert-error gap-2 text-sm py-2 px-3">
         <Warning size={18} weight="bold" className="shrink-0" />
         <span className="flex-1 min-w-0 text-sm select-text break-words">
           {summary}
@@ -332,7 +617,7 @@ function ErrorMessage({
       </div>
       <button
         onClick={() => setDetailsOpen(!detailsOpen)}
-        className="flex items-center gap-1 text-[10px] opacity-50 active:opacity-80 transition-opacity"
+        className="flex items-center gap-1 text-[10px] opacity-50 active:opacity-80 transition-opacity pl-1"
       >
         {detailsOpen ? (
           <CaretUp size={10} weight="bold" />
@@ -342,7 +627,7 @@ function ErrorMessage({
         Details
       </button>
       {detailsOpen && (
-        <pre className="text-[11px] opacity-60 bg-black/20 rounded p-2 w-full overflow-x-auto whitespace-pre-wrap break-all select-text max-h-48 overflow-y-auto">
+        <pre className="text-[11px] opacity-60 bg-black/20 rounded p-2 w-full whitespace-pre-wrap break-all select-text max-h-48 overflow-y-auto">
           {rawJson}
         </pre>
       )}
@@ -353,14 +638,42 @@ function ErrorMessage({
 /**
  * Inline-editable queued message row.
  */
+function QueuedMessageThumbs({
+  attachmentIds,
+}: {
+  attachmentIds: Id<"uploads">[];
+}) {
+  const uploads = useQuery(api.uploads.getMany, { uploadIds: attachmentIds });
+  if (!uploads) return null;
+  return (
+    <div className="flex gap-1 mt-1">
+      {uploads
+        .filter(Boolean)
+        .map(
+          (u) =>
+            u && (
+              <img
+                key={u._id}
+                src={proxyStorageUrl(u.thumbnailUrl ?? u.url)}
+                alt={u.filename}
+                className="w-8 h-8 rounded object-cover opacity-70"
+              />
+            ),
+        )}
+    </div>
+  );
+}
+
 function QueuedMessageRow({
   content,
   index,
+  attachments,
   onRemove,
   onUpdate,
 }: {
   content: string;
   index: number;
+  attachments?: Id<"uploads">[];
   onRemove: () => void;
   onUpdate: (newContent: string) => void;
 }) {
@@ -390,33 +703,38 @@ function QueuedMessageRow({
       <span className="badge badge-sm badge-ghost mt-0.5 shrink-0">
         {index + 1}
       </span>
-      {editing ? (
-        <textarea
-          ref={inputRef}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onBlur={handleSave}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              handleSave();
-            }
-            if (e.key === "Escape") {
-              setDraft(content);
-              setEditing(false);
-            }
-          }}
-          rows={1}
-          className="textarea textarea-bordered textarea-xs flex-1 text-xs resize-none"
-        />
-      ) : (
-        <span
-          className="flex-1 text-xs truncate cursor-pointer opacity-70"
-          onClick={() => setEditing(true)}
-        >
-          {content}
-        </span>
-      )}
+      <div className="flex-1 min-w-0">
+        {editing ? (
+          <textarea
+            ref={inputRef}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={handleSave}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                handleSave();
+              }
+              if (e.key === "Escape") {
+                setDraft(content);
+                setEditing(false);
+              }
+            }}
+            rows={1}
+            className="textarea textarea-bordered textarea-xs w-full text-xs resize-none"
+          />
+        ) : (
+          <span
+            className="text-xs truncate block cursor-pointer opacity-70"
+            onClick={() => setEditing(true)}
+          >
+            {content === "(image)" ? "" : content}
+          </span>
+        )}
+        {attachments && attachments.length > 0 && (
+          <QueuedMessageThumbs attachmentIds={attachments} />
+        )}
+      </div>
       <button
         onClick={() => setEditing(true)}
         className="btn btn-ghost btn-xs px-1 opacity-40"
@@ -437,16 +755,28 @@ function QueuedMessageRow({
 
 export default function SessionPage() {
   const params = useParams();
+  const router = useRouter();
   const sessionId = params.id as Id<"sessions">;
 
   const session = useQuery(api.sessions.get, { id: sessionId });
+  const hasUnseen = useQuery(api.sessions.hasUnseen, { exclude: sessionId });
+
+  // Redirect to new session if this one was deleted
+  useEffect(() => {
+    if (session === null || (session && session.deletedAt)) {
+      router.replace("/session/new");
+    }
+  }, [session, router]);
   const messages = useQuery(api.messages.list, { sessionId });
   const queuedMessages = useQuery(api.queuedMessages.list, { sessionId });
   const sendMessage = useMutation(api.messages.send);
   const addToQueue = useMutation(api.queuedMessages.add);
   const removeFromQueue = useMutation(api.queuedMessages.remove);
   const updateQueued = useMutation(api.queuedMessages.update);
-  const shiftQueue = useMutation(api.queuedMessages.shift);
+  const markSeen = useMutation(api.sessions.markSeen);
+  const { upload, pendingUploads, isUploading, removePending, clearPending } =
+    useUpload(sessionId);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const draftKey = `draft:${sessionId}`;
   const [input, setInput] = useState("");
@@ -467,13 +797,18 @@ export default function SessionPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
   const [showEditTitle, setShowEditTitle] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const autoSendingRef = useRef(false);
   const witnessedStreamingRef = useRef<Set<string>>(new Set());
   const initialMessageIdsRef = useRef<Set<string> | null>(null);
 
   const isStreaming = messages?.some((m) => m.streaming) ?? false;
+
+  // Mark session as seen — but only when not streaming, so that
+  // lastSeenAt doesn't leapfrog the assistant message's createdAt
+  useEffect(() => {
+    if (messages && !isStreaming) markSeen({ id: sessionId });
+  }, [messages, isStreaming, sessionId, markSeen]);
 
   // Capture initial message IDs on first load (no animation for these)
   useEffect(() => {
@@ -508,44 +843,9 @@ export default function SessionPage() {
 
   // Always instant-scroll to bottom when messages change
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView();
+    const el = messagesContainerRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
   }, [messages, viewportHeight]);
-
-  // Auto-send queued messages when streaming ends
-  useEffect(() => {
-    if (isStreaming || isLoading || autoSendingRef.current) return;
-    if (!queuedMessages || queuedMessages.length === 0) return;
-
-    const sendNext = async () => {
-      autoSendingRef.current = true;
-      setIsLoading(true);
-      try {
-        const content = await shiftQueue({ sessionId });
-        if (content) {
-          await sendMessage({ sessionId, content });
-          await fetch("/api/chat", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ sessionId }),
-          });
-        }
-      } catch (error) {
-        console.error("Failed to auto-send queued message:", error);
-      } finally {
-        setIsLoading(false);
-        autoSendingRef.current = false;
-      }
-    };
-
-    sendNext();
-  }, [
-    isStreaming,
-    isLoading,
-    queuedMessages,
-    sessionId,
-    shiftQueue,
-    sendMessage,
-  ]);
 
   const resizeTextarea = useCallback(() => {
     const textarea = textareaRef.current;
@@ -555,27 +855,66 @@ export default function SessionPage() {
     }
   }, []);
 
+  const handlePaste = useCallback(
+    async (e: React.ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const item of Array.from(items)) {
+        if (item.type.startsWith("image/")) {
+          e.preventDefault();
+          const file = item.getAsFile();
+          if (file) await upload(file);
+        }
+      }
+    },
+    [upload],
+  );
+
+  const handleFileSelect = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = e.target.files;
+      if (!files) return;
+      for (const file of Array.from(files)) {
+        if (file.type.startsWith("image/")) {
+          await upload(file);
+        }
+      }
+      e.target.value = "";
+    },
+    [upload],
+  );
+
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
-    if (!input.trim()) return;
+    if (!input.trim() && pendingUploads.length === 0) return;
 
-    const content = input.trim();
+    const content = input.trim() || "(image)";
+    const attachmentIds = pendingUploads.map((u) => u.id);
     setInput("");
+    clearPending();
 
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
     }
 
-    // If streaming or loading, queue instead of sending directly
-    if (isStreaming || isLoading) {
-      await addToQueue({ sessionId, content });
+    // If streaming, loading, or queue is being drained server-side, queue instead
+    if (isStreaming || isLoading || (queuedMessages && queuedMessages.length > 0)) {
+      await addToQueue({
+        sessionId,
+        content,
+        attachments: attachmentIds.length > 0 ? attachmentIds : undefined,
+      });
       return;
     }
 
     setIsLoading(true);
 
     try {
-      await sendMessage({ sessionId, content });
+      await sendMessage({
+        sessionId,
+        content,
+        attachments: attachmentIds.length > 0 ? attachmentIds : undefined,
+      });
       await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -615,7 +954,7 @@ export default function SessionPage() {
   return (
     <SessionDrawer activeSessionId={sessionId}>
       <div
-        className="flex flex-col"
+        className="flex flex-col overflow-hidden"
         style={{ height: viewportHeight ? `${viewportHeight}px` : "100dvh" }}
       >
         <div
@@ -624,33 +963,56 @@ export default function SessionPage() {
           <div className="flex-none">
             <label
               htmlFor="session-drawer"
-              className="btn btn-ghost btn-sm btn-square"
+              className="btn btn-ghost btn-sm btn-square indicator"
             >
+              {hasUnseen && (
+                <span className="indicator-item badge badge-primary w-2 h-2 p-0 min-w-0 -translate-x-0.5 translate-y-0.5" />
+              )}
               <List size={18} weight="bold" />
             </label>
           </div>
           <div className="flex-1 min-w-0">
             <button
               onClick={() => session && setShowEditTitle(true)}
-              className="text-sm font-medium truncate px-1 text-left btn btn-ghost btn-sm h-auto min-h-0 py-1"
+              className="text-sm font-medium px-1 text-left btn btn-ghost btn-sm h-auto min-h-0 py-1 max-w-full"
             >
-              {session?.title ?? "Loading..."}
+              <span className="truncate">{session?.title ?? "Loading..."}</span>
             </button>
           </div>
+          {messages && (
+            <div className="flex-none">
+              <AttachmentsPopover
+                messages={messages}
+                scrollContainer={messagesContainerRef}
+              />
+            </div>
+          )}
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4">
+        <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4">
           {messages?.length === 0 && (
             <p className="text-center text-base-content/30 mt-12 text-sm">
               Send a message to start the conversation.
             </p>
           )}
           {messages?.map((message, idx) => {
-            const isError = message.error || (message.role === "assistant" && !message.streaming && message.content.startsWith("Error: "));
+            const isError =
+              message.error ||
+              (message.role === "assistant" &&
+                !message.streaming &&
+                message.content.startsWith("Error: "));
             // Only show retry on the very last error message
-            const isLastError = isError && !messages.slice(idx + 1).some(
-              (m) => m.error || (m.role === "assistant" && !m.streaming && m.content.startsWith("Error: ")),
-            );
+            const isLastError =
+              isError &&
+              !messages
+                .slice(idx + 1)
+                .some(
+                  (m) =>
+                    m.error ||
+                    (m.role === "assistant" &&
+                      !m.streaming &&
+                      m.content.startsWith("Error: ")),
+                );
             // Show a date divider when the day changes between messages
             const prevMsg = idx > 0 ? messages[idx - 1] : null;
             const curDate = new Date(message.createdAt);
@@ -669,6 +1031,7 @@ export default function SessionPage() {
                   </div>
                 )}
                 <div
+                  id={`msg-${message._id}`}
                   className={`chat ${message.role === "user" ? "chat-end" : "chat-start"} ${
                     initialMessageIdsRef.current &&
                     !initialMessageIdsRef.current.has(message._id)
@@ -677,28 +1040,59 @@ export default function SessionPage() {
                   }`}
                 >
                   {isError ? (
-                  <ErrorMessage
-                    content={message.content}
-                    showRetry={isLastError}
-                    onRetry={() => {
-                      const prevUserMsg = [...messages!]
-                        .slice(0, idx)
-                        .reverse()
-                        .find((m) => m.role === "user");
-                      if (prevUserMsg) setInput(prevUserMsg.content);
-                    }}
-                  />
-                ) : (
-                  <div
-                    className={`chat-bubble ${
-                      message.role === "user" ? "chat-bubble-primary" : ""
-                    } ${message.cancelled && message.content === "(cancelled)" ? "opacity-50" : ""}`}
-                  >
-                    <div className="text-sm leading-relaxed select-text">
-                      {message.streaming ? (
-                        <>
+                    <ErrorMessage
+                      content={message.content}
+                      showRetry={isLastError}
+                      onRetry={() => {
+                        const prevUserMsg = [...messages!]
+                          .slice(0, idx)
+                          .reverse()
+                          .find((m) => m.role === "user");
+                        if (prevUserMsg) setInput(prevUserMsg.content);
+                      }}
+                    />
+                  ) : (
+                    <div
+                      className={`chat-bubble ${
+                        message.role === "user" ? "chat-bubble-primary" : ""
+                      } ${message.cancelled && message.content === "(cancelled)" ? "opacity-50" : ""}`}
+                    >
+                      {message.role === "user" &&
+                        message.attachments &&
+                        message.attachments.length > 0 && (
+                          <MessageImages
+                            attachmentIds={
+                              message.attachments as Id<"uploads">[]
+                            }
+                          />
+                        )}
+                      <div className="text-sm leading-relaxed select-text">
+                        {message.streaming ? (
                           <StreamingMarkdown content={message.content} />
-                          <div className="flex items-center justify-end gap-2 mt-1">
+                        ) : message.role === "assistant" ? (
+                          <CollapsibleMessage
+                            content={message.content}
+                            skipCollapse={witnessedStreamingRef.current.has(
+                              message._id,
+                            )}
+                          />
+                        ) : message.content === "(image)" ? null : (
+                          <div className="prose prose-sm prose-invert max-w-none">
+                            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                              {message.content}
+                            </ReactMarkdown>
+                          </div>
+                        )}
+                      </div>
+                      {/* TODO: ThinkingSteps hidden for now */}
+                      <div
+                        className={`flex items-center gap-4 mt-1 ${message.role === "user" ? "justify-end" : "justify-between"}`}
+                      >
+                        <span className={`text-[10px] opacity-30`}>
+                          {formatTime(message.createdAt)}
+                        </span>
+                        {message.streaming && (
+                          <div className="flex items-center gap-2">
                             <span className="loading loading-dots loading-xs opacity-50" />
                             <button
                               onClick={handleCancel}
@@ -709,28 +1103,10 @@ export default function SessionPage() {
                               <X size={14} weight="bold" />
                             </button>
                           </div>
-                        </>
-                      ) : message.role === "assistant" ? (
-                        <CollapsibleMessage
-                          content={message.content}
-                          skipCollapse={witnessedStreamingRef.current.has(
-                            message._id,
-                          )}
-                        />
-                      ) : (
-                        <div className="prose prose-sm prose-invert max-w-none">
-                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                            {message.content}
-                          </ReactMarkdown>
-                        </div>
-                      )}
+                        )}
+                      </div>
                     </div>
-                    {/* TODO: ThinkingSteps hidden for now */}
-                    <div className={`text-[10px] opacity-30 mt-1 ${message.role === "user" ? "text-right" : "text-left"}`}>
-                      {formatTime(message.createdAt)}
-                    </div>
-                  </div>
-                )}
+                  )}
                 </div>
               </React.Fragment>
             );
@@ -738,11 +1114,25 @@ export default function SessionPage() {
           {isLoading && messages && !messages.some((m) => m.streaming) && (
             <div className="chat chat-start chat-animate">
               <div className="chat-bubble">
-                <span className="loading loading-dots loading-xs" />
+                <div className="flex items-center gap-4 justify-between">
+                  <span className="text-[10px] opacity-30">
+                    {formatTime(Date.now())}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="loading loading-dots loading-xs opacity-50" />
+                    <button
+                      onClick={handleCancel}
+                      disabled={isCancelling}
+                      className="btn btn-ghost btn-xs btn-circle opacity-50 active:opacity-100 transition-opacity"
+                      aria-label="Stop response"
+                    >
+                      <X size={14} weight="bold" />
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           )}
-          <div ref={messagesEndRef} />
         </div>
 
         <div className="shrink-0 border-t border-base-300">
@@ -757,6 +1147,7 @@ export default function SessionPage() {
                   key={qm._id}
                   content={qm.content}
                   index={i}
+                  attachments={qm.attachments as Id<"uploads">[] | undefined}
                   onRemove={() => removeFromQueue({ id: qm._id })}
                   onUpdate={(content) => updateQueued({ id: qm._id, content })}
                 />
@@ -764,7 +1155,49 @@ export default function SessionPage() {
             </div>
           )}
           <form onSubmit={handleSubmit} className="p-3">
+            {isUploading && (
+              <div className="flex items-center gap-2 pb-2 mb-1">
+                <span className="loading loading-spinner loading-xs opacity-50" />
+                <span className="text-xs opacity-40">Uploading...</span>
+              </div>
+            )}
+            {pendingUploads.length > 0 && (
+              <div className="flex gap-2 overflow-x-auto pb-2 mb-2">
+                {pendingUploads.map((u) => (
+                  <div key={u.id} className="relative shrink-0 w-16 h-16">
+                    <img
+                      src={u.previewUrl}
+                      alt={u.filename}
+                      className="w-full h-full rounded-lg object-cover"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removePending(u.id)}
+                      className="btn btn-circle btn-xs absolute top-0.5 right-0.5 btn-error min-h-0 h-5 w-5"
+                    >
+                      <X size={10} weight="bold" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
             <div className="flex gap-2 items-end">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="btn btn-sm btn-square btn-ghost opacity-50 active:opacity-100"
+                aria-label="Attach image"
+              >
+                <ImageSquare size={18} weight="duotone" />
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/gif,image/webp"
+                multiple
+                className="hidden"
+                onChange={handleFileSelect}
+              />
               <textarea
                 ref={textareaRef}
                 value={input}
@@ -773,6 +1206,7 @@ export default function SessionPage() {
                   resizeTextarea();
                 }}
                 onKeyDown={handleKeyDown}
+                onPaste={handlePaste}
                 placeholder={
                   isStreaming || isLoading
                     ? "Type to queue..."
@@ -783,7 +1217,7 @@ export default function SessionPage() {
               />
               <button
                 type="submit"
-                disabled={!input.trim()}
+                disabled={!input.trim() && pendingUploads.length === 0}
                 className={`btn btn-sm btn-square ${isStreaming || isLoading ? "btn-secondary" : "btn-primary"}`}
               >
                 {isStreaming || isLoading ? (
@@ -800,6 +1234,7 @@ export default function SessionPage() {
           <EditTitleModal
             sessionId={sessionId}
             currentTitle={session.title}
+            isCustomTitle={!!session.customTitle}
             onClose={() => setShowEditTitle(false)}
           />
         )}

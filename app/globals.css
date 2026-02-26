@@ -46,6 +46,20 @@
   animation: slide-up 0.2s ease-out;
 }
 
+.highlight-flash {
+  animation: flash 1s ease-out;
+}
+
+@keyframes flash {
+  0%,
+  30% {
+    background: oklch(var(--p) / 0.15);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
 /* Scrollbar styling for dark theme */
 ::-webkit-scrollbar {
   width: 6px;
