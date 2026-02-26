@@ -117,32 +117,6 @@ Then open [http://localhost:3000](http://localhost:3000).
 | `npm run typecheck` | TypeScript type checking |
 | `npm run test:e2e` | Run Playwright end-to-end tests |
 
-## Project Structure
-
-```
-app/
-  page.tsx                      Home — session list + new session
-  session/[id]/page.tsx         Chat UI — streaming messages, uploads
-  session/new/page.tsx          New session with message composer
-  api/
-    chat/route.ts               Agent SDK integration, streams to Convex
-    chat/cancel/route.ts        Cancel active streams
-    files/{route,read,write}.ts Browse/edit ~/.claude config files
-    uploads/route.ts            Image upload with thumbnails
-  components/
-    session-drawer.tsx          Slide-out session navigation
-    file-tree.tsx               Directory browser
-    file-editor.tsx             CodeMirror editor
-    search-modal.tsx            Search sessions
-  dashboard/                    Session management, file explorer, settings
-
-convex/
-  schema.ts                     DB schema (sessions, messages, uploads)
-  sessions.ts                   Session CRUD + soft-delete
-  messages.ts                   Message CRUD + streaming
-  queuedMessages.ts             Send-while-streaming queue
-```
-
 ## Status
 
 **Functional MVP.** Core chat, streaming, session management, and file editing all work.
