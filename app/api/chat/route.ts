@@ -16,7 +16,7 @@ type TextContentBlock = { type: "text"; text: string };
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
-import { activeStreams } from "./active-streams";
+import { activeStreams, cancelledSessions } from "./active-streams";
 import { generateTitle } from "./generate-title";
 import { after } from "next/server";
 
@@ -145,21 +145,27 @@ interface ProcessResult {
 async function processChatStream(
   sessionId: Id<"sessions">,
 ): Promise<ProcessResult> {
-  const session = await convex.query(api.sessions.get, { id: sessionId });
+  // Check if this session was cancelled before we even started
+  if (cancelledSessions.has(sessionId)) {
+    cancelledSessions.delete(sessionId);
+    return { ok: true, cancelled: true };
+  }
+
+  const [session, messages] = await Promise.all([
+    convex.query(api.sessions.get, { id: sessionId }),
+    convex.query(api.messages.list, { sessionId }),
+  ]);
   if (!session) return { ok: false, error: "Session not found" };
 
-  const messages = await convex.query(api.messages.list, { sessionId });
   const lastUserMessage = [...messages]
     .reverse()
     .find((m) => m.role === "user");
   if (!lastUserMessage) return { ok: false, error: "No user message" };
 
-  // On first message, immediately generate a title from just the user prompt
-  const userMessages = messages.filter((m) => m.role === "user");
-  if (userMessages.length === 1 && !session.customTitle) {
-    generateTitle(sessionId, messages, "").catch((err) =>
-      console.error("[early title gen error]", err),
-    );
+  // Check again after DB fetches — cancel may have arrived during the gap
+  if (cancelledSessions.has(sessionId)) {
+    cancelledSessions.delete(sessionId);
+    return { ok: true, cancelled: true };
   }
 
   const messageId = await convex.mutation(api.messages.createAssistant, {
@@ -252,15 +258,23 @@ async function processChatStream(
         })();
       }
 
+      // Final check before starting the SDK — cancel may have arrived during
+      // image downloads or session setup.
+      if (cancelledSessions.has(sessionId)) {
+        cancelledSessions.delete(sessionId);
+        await convex.mutation(api.messages.cancelStreaming, { messageId });
+        return { ok: true, cancelled: true };
+      }
+
       const queryInstance = query({
         prompt,
-        options: sdkOptions,
+        options: { ...sdkOptions, abortController: controller },
       });
 
       // Register so the cancel endpoint can abort this stream
       activeStreams.set(sessionId, {
         controller,
-        generator: queryInstance,
+        query: queryInstance,
         messageId,
       });
 
@@ -401,7 +415,11 @@ async function processChatStream(
 async function drainQueue(sessionId: Id<"sessions">) {
   while (true) {
     try {
-      // Bail if another stream started (e.g. user sent a new message directly)
+      // Bail if cancelled or another stream started
+      if (cancelledSessions.has(sessionId)) {
+        cancelledSessions.delete(sessionId);
+        return;
+      }
       if (activeStreams.has(sessionId)) return;
 
       const next = await convex.mutation(api.queuedMessages.shift, {
@@ -432,10 +450,29 @@ export async function POST(req: Request) {
     sessionId: Id<"sessions">;
   };
 
+  // Clear any previous cancel signal — user is explicitly sending a new message.
+  cancelledSessions.delete(sessionId);
+
   // Reject if already processing this session
   if (activeStreams.has(sessionId)) {
     return Response.json({ ok: true, alreadyProcessing: true });
   }
+
+  // Fire early title generation concurrently — don't wait for SDK setup
+  after(async () => {
+    try {
+      const [session, messages] = await Promise.all([
+        convex.query(api.sessions.get, { id: sessionId }),
+        convex.query(api.messages.list, { sessionId }),
+      ]);
+      const userMessages = messages.filter((m) => m.role === "user");
+      if (session && userMessages.length === 1 && !session.customTitle) {
+        await generateTitle(sessionId, messages, "");
+      }
+    } catch (err) {
+      console.error("[early title gen error]", err);
+    }
+  });
 
   // Process in the background — the client gets real-time updates via Convex
   after(async () => {
