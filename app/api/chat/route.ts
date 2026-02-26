@@ -426,23 +426,20 @@ export async function POST(req: Request) {
     return Response.json({ ok: true, alreadyProcessing: true });
   }
 
-  const result = await processChatStream(sessionId);
-
-  if (result.ok && !result.cancelled) {
-    // Drain queued messages in the background after the response is sent
-    after(() => {
-      drainQueue(sessionId).catch((err) =>
-        console.error("[drainQueue error]", err),
-      );
-    });
-  }
-
-  if (!result.ok && result.error) {
-    return Response.json({ error: result.error }, { status: 500 });
-  }
-
-  return Response.json({
-    ok: result.ok,
-    cancelled: result.cancelled,
+  // Process in the background — the client gets real-time updates via Convex
+  after(async () => {
+    try {
+      await processChatStream(sessionId);
+    } catch (err) {
+      console.error("[chat background error]", err);
+    }
+    // Always drain queued messages, even if the stream errored
+    try {
+      await drainQueue(sessionId);
+    } catch (err) {
+      console.error("[drainQueue error]", err);
+    }
   });
+
+  return Response.json({ ok: true });
 }

@@ -817,6 +817,29 @@ export default function SessionPage() {
     }
   }, [messages]);
 
+  // Auto-drain orphaned queue: queued messages exist but nothing is processing
+  const drainingRef = useRef(false);
+  useEffect(() => {
+    if (
+      queuedMessages &&
+      queuedMessages.length > 0 &&
+      !isStreaming &&
+      !isLoading &&
+      !drainingRef.current
+    ) {
+      drainingRef.current = true;
+      fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId }),
+      })
+        .catch((err) => console.error("Failed to drain orphaned queue:", err))
+        .finally(() => {
+          drainingRef.current = false;
+        });
+    }
+  }, [queuedMessages, isStreaming, isLoading, sessionId]);
+
   // Track which messages we've seen streaming live
   useEffect(() => {
     if (messages) {
@@ -897,13 +920,35 @@ export default function SessionPage() {
       textareaRef.current.style.height = "auto";
     }
 
-    // If streaming, loading, or queue is being drained server-side, queue instead
-    if (isStreaming || isLoading || (queuedMessages && queuedMessages.length > 0)) {
+    // If actively streaming or loading, just queue the message
+    if (isStreaming || isLoading) {
       await addToQueue({
         sessionId,
         content,
         attachments: attachmentIds.length > 0 ? attachmentIds : undefined,
       });
+      return;
+    }
+
+    // Orphaned queue: messages queued but nothing processing — add and trigger drain
+    if (queuedMessages && queuedMessages.length > 0) {
+      await addToQueue({
+        sessionId,
+        content,
+        attachments: attachmentIds.length > 0 ? attachmentIds : undefined,
+      });
+      setIsLoading(true);
+      try {
+        await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionId }),
+        });
+      } catch (error) {
+        console.error("Failed to drain queue:", error);
+      } finally {
+        setIsLoading(false);
+      }
       return;
     }
 
