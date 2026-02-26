@@ -129,3 +129,5 @@ Use these class names instead of building from raw Tailwind. Refer to [daisyui.c
 ## Remember
 
 When the user says "remember X", add it to this file under the appropriate section (or this section if no other fits).
+
+- **To-do tracking**: When the user asks to make a to-do or add a task, update `TODO.md` in the project root (not just the in-session TodoWrite tool).

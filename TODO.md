@@ -10,3 +10,4 @@
 - [ ] Full Agent SDK coverage
 - [ ] Themes
 - [ ] Multi-window pane
+- [ ] Rethink message queue system — support injecting messages midstream
