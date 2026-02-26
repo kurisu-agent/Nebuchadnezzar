@@ -145,7 +145,7 @@ convex/
 
 ## Status
 
-**Functional MVP.** Core chat, streaming, session management, and file editing all work. See [SITREP.md](SITREP.md) for detailed current state.
+**Functional MVP.** Core chat, streaming, session management, and file editing all work.
 
 ### Roadmap
 

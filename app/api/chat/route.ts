@@ -196,9 +196,6 @@ async function processChatStream(
       const backoff = INITIAL_BACKOFF_MS * Math.pow(2, attempt - 1);
       const jitter = Math.random() * backoff * 0.3;
       const delay = backoff + jitter;
-      console.log(
-        `[retry] attempt ${attempt}/${MAX_RETRIES} after ${Math.round(delay)}ms`,
-      );
       await new Promise((r) => setTimeout(r, delay));
       if (controller.signal.aborted) break;
     }

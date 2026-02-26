@@ -24,5 +24,18 @@ npm-debug.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+
+# claude
+.claude/
+!CLAUDE.md
+
 # convex
 convex/_generated/
