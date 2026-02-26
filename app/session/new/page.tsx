@@ -36,7 +36,7 @@ export default function NewSessionPage() {
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = Math.min(el.scrollHeight, 120) + "px";
+    el.style.height = Math.min(el.scrollHeight, 200) + "px";
   };
 
   const handlePaste = useCallback(
@@ -163,11 +163,11 @@ export default function NewSessionPage() {
                 ))}
               </div>
             )}
-            <div className="flex gap-2 items-end">
+            <div className="flex items-end gap-1.5 rounded-2xl border border-base-content/10 bg-base-200/50 px-1.5 py-1.5 focus-within:border-base-content/20 focus-within:bg-base-300/50 transition-colors">
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="btn btn-sm btn-square btn-ghost opacity-50 active:opacity-100"
+                className="btn btn-sm btn-circle btn-ghost opacity-50 active:opacity-100 shrink-0"
                 aria-label="Attach image"
               >
                 <ImageSquare size={18} weight="duotone" />
@@ -192,14 +192,14 @@ export default function NewSessionPage() {
                 placeholder="Message... (Enter to send)"
                 rows={1}
                 disabled={isSending}
-                className="textarea flex-1 text-sm resize-none py-2 min-h-0 bg-transparent border border-base-content/10 focus:bg-base-300/50 focus:border-base-content/20 focus:outline-none transition-colors"
+                className="flex-1 text-sm resize-none bg-transparent border-none outline-none py-1.5 min-h-0 leading-snug placeholder:opacity-40"
               />
               <button
                 type="submit"
                 disabled={
                   (!input.trim() && pendingUploads.length === 0) || isSending
                 }
-                className="btn btn-sm btn-square btn-primary"
+                className="btn btn-sm btn-circle btn-primary shrink-0"
               >
                 {isSending ? (
                   <span className="loading loading-spinner loading-xs" />
