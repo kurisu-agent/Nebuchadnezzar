@@ -4,7 +4,7 @@ import packageJson from "@/package.json";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useRouter } from "next/navigation";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import {
   ArrowsClockwise,
   DownloadSimple,
@@ -28,20 +28,14 @@ export default function AboutPage() {
   const [checking, setChecking] = useState(false);
   const [updating, setUpdating] = useState(false);
 
-  const fetchLocalVersion = useCallback(async () => {
-    try {
-      const res = await fetch("/api/version");
-      if (res.ok) {
-        setLocalVersion(await res.json());
-      }
-    } catch (err) {
-      console.error("[version fetch]", err);
-    }
-  }, []);
-
   useEffect(() => {
-    fetchLocalVersion();
-  }, [fetchLocalVersion]);
+    fetch("/api/version")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data) setLocalVersion(data);
+      })
+      .catch((err) => console.error("[version fetch]", err));
+  }, []);
 
   const hasUpdate =
     updateInfo && localVersion && updateInfo.remoteSha !== localVersion.sha;
@@ -50,7 +44,8 @@ export default function AboutPage() {
     setChecking(true);
     try {
       await checkNow();
-      await fetchLocalVersion();
+      const res = await fetch("/api/version");
+      if (res.ok) setLocalVersion(await res.json());
     } catch (err) {
       console.error("[check now]", err);
     }

@@ -1,24 +1,23 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useRouter } from "next/navigation";
 import {
-  List,
   PaperPlaneTilt,
   RocketLaunch,
   ImageSquare,
   X,
 } from "@phosphor-icons/react";
 import { SessionDrawer } from "@/app/components/session-drawer";
+import { TopBar } from "@/app/components/top-bar";
 import { useUpload } from "@/app/hooks/use-upload";
 
 export default function NewSessionPage() {
   const createSession = useMutation(api.sessions.create);
   const sendMessage = useMutation(api.messages.send);
   const assignSession = useMutation(api.uploads.assignSession);
-  const hasUnseen = useQuery(api.sessions.hasUnseen, {});
   const router = useRouter();
 
   const [input, setInput] = useState("");
@@ -109,24 +108,11 @@ export default function NewSessionPage() {
   return (
     <SessionDrawer>
       <div className="flex flex-col h-[100dvh]">
-        <div className="navbar shrink-0 gap-1 bg-base-200">
-          <div className="flex-none">
-            <label
-              htmlFor="session-drawer"
-              className="btn btn-ghost btn-sm btn-square indicator"
-            >
-              {hasUnseen && (
-                <span className="indicator-item badge badge-xs badge-primary" />
-              )}
-              <List size={18} weight="bold" />
-            </label>
-          </div>
-          <div className="flex-1 min-w-0">
-            <span className="text-sm font-medium opacity-40 px-1">
-              New Session
-            </span>
-          </div>
-        </div>
+        <TopBar>
+          <span className="text-sm font-medium opacity-40 px-1">
+            New Session
+          </span>
+        </TopBar>
 
         <div className="flex-1 overflow-y-auto p-4 flex items-center justify-center">
           <div className="text-center opacity-30">

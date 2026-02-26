@@ -21,12 +21,14 @@ import { SessionRow, SessionInfo } from "./session-row";
 import { SearchModal } from "./search-modal";
 import { useUpdateAvailable } from "@/app/hooks/use-update-check";
 import { extractSessionIds } from "@/app/workspace/url-encoding";
+import { NotificationDot } from "./notification-dot";
 
 const ONE_HOUR = 60 * 60 * 1000;
 
 /** A workspace with its DB id and the session IDs it contains */
 type WorkspaceGroup = {
   workspaceId: Id<"workspaces">;
+  name: string;
   sessionIds: Set<Id<"sessions">>;
   sessions: SessionInfo[];
   /** Most recent activity across all sessions in this workspace */
@@ -87,7 +89,7 @@ export function SessionDrawer({
     const allIds = new Set<Id<"sessions">>();
     const groupMap = new Map<
       Id<"workspaces">,
-      { workspaceId: Id<"workspaces">; sessionIds: Set<Id<"sessions">> }
+      { workspaceId: Id<"workspaces">; name: string; sessionIds: Set<Id<"sessions">> }
     >();
 
     if (workspaces) {
@@ -95,7 +97,7 @@ export function SessionDrawer({
         const ids = extractSessionIds(ws.layout);
         const idSet = new Set(ids);
         for (const id of ids) allIds.add(id);
-        groupMap.set(ws._id, { workspaceId: ws._id, sessionIds: idSet });
+        groupMap.set(ws._id, { workspaceId: ws._id, name: ws.name, sessionIds: idSet });
       }
     }
     if (workspaceSessionIds) {
@@ -134,6 +136,7 @@ export function SessionDrawer({
       if (groupSessions.length > 0) {
         groups.push({
           workspaceId: g.workspaceId,
+          name: g.name,
           sessionIds: g.sessionIds,
           sessions: groupSessions,
           lastActivity: maxActivity,
@@ -154,6 +157,17 @@ export function SessionDrawer({
       items.push({ type: "workspace", group: g, lastActivity: g.lastActivity });
     }
     items.sort((a, b) => b.lastActivity - a.lastActivity);
+
+    // Always show at least 3 items in the main list — promote the most
+    // recent old sessions when there aren't enough recent items.
+    const MIN_VISIBLE = 3;
+    if (items.length < MIN_VISIBLE && old.length > 0) {
+      const needed = MIN_VISIBLE - items.length;
+      const promoted = old.splice(0, needed); // old is already sorted by recency (from sessions.list)
+      for (const s of promoted) {
+        items.push({ type: "session", session: s, lastActivity: s.lastActivity });
+      }
+    }
 
     return { recentItems: items, oldSessions: old, allWsSessionIds: allIds };
   }, [workspaces, workspaceSessionIds, sessions, now]);
@@ -214,7 +228,7 @@ export function SessionDrawer({
           className="drawer-overlay"
         />
         <div className="bg-base-200 h-full w-72 flex flex-col">
-          <div className="p-4 pb-3 pt-[calc(env(safe-area-inset-top)-8px)] flex items-center justify-between shrink-0">
+          <div className="p-4 pb-3 pt-[max(1rem,env(safe-area-inset-top))] flex items-center justify-between shrink-0">
             <span className="text-sm font-semibold opacity-70 flex items-center gap-1.5">
               <RocketLaunch size={16} weight="duotone" />
               Nebuchadnezzar
@@ -252,6 +266,9 @@ export function SessionDrawer({
                         handleNavigateWorkspace(item.group.workspaceId)
                       }
                     >
+                      <div className="px-3 pt-2 pb-1 text-xs font-medium text-primary/60 truncate">
+                        {item.group.name}
+                      </div>
                       <ul className="list">
                         {item.group.sessions.map((s) => (
                           <SessionRow
@@ -333,12 +350,10 @@ export function SessionDrawer({
               prefetch={true}
               className="btn btn-ghost btn-sm flex-1 justify-start gap-2 text-base-content/60"
             >
-              <div className="indicator">
-                {hasUpdate && (
-                  <span className="indicator-item badge badge-xs badge-primary" />
-                )}
+              <span className="relative">
+                {hasUpdate && <NotificationDot />}
                 <GearSix size={18} weight="duotone" />
-              </div>
+              </span>
               Dashboard
             </Link>
             <button

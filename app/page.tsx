@@ -21,7 +21,7 @@ export default function Home() {
   const router = useRouter();
   const [showOld, setShowOld] = useState(false);
 
-  const now = Date.now();
+  const [now] = useState(() => Date.now());
   const recentSessions: SessionInfo[] = [];
   const oldSessions: SessionInfo[] = [];
 
