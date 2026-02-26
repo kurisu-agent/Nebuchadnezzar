@@ -50,7 +50,7 @@ export default function DashboardLayout({
     <SessionDrawer>
       <div className="h-[100dvh] flex flex-col bg-base-100">
         {/* Navbar */}
-        <div className="navbar bg-base-200 shrink-0 gap-1">
+        <div className="navbar bg-base-200 shrink-0 gap-1 pt-[calc(env(safe-area-inset-top)-16px)]">
           <div className="flex-none">
             <label
               htmlFor="session-drawer"

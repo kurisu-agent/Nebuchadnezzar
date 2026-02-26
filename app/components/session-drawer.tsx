@@ -5,7 +5,7 @@ import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import {
   Plus,
   GearSix,
@@ -14,42 +14,149 @@ import {
   ClockCounterClockwise,
   RocketLaunch,
   Broom,
+  CornersOut,
+  CornersIn,
 } from "@phosphor-icons/react";
 import { SessionRow, SessionInfo } from "./session-row";
 import { SearchModal } from "./search-modal";
 import { useUpdateAvailable } from "@/app/hooks/use-update-check";
+import { extractSessionIds } from "@/app/workspace/url-encoding";
 
 const ONE_HOUR = 60 * 60 * 1000;
 
+/** A workspace with its DB id and the session IDs it contains */
+type WorkspaceGroup = {
+  workspaceId: Id<"workspaces">;
+  sessionIds: Set<Id<"sessions">>;
+  sessions: SessionInfo[];
+  /** Most recent activity across all sessions in this workspace */
+  lastActivity: number;
+};
+
 export function SessionDrawer({
   activeSessionId,
+  onAddToWorkspace,
+  workspaceSessionIds,
   children,
 }: {
   activeSessionId?: Id<"sessions">;
+  onAddToWorkspace?: (id: Id<"sessions">) => void;
+  /** Live workspace session IDs from the current WorkspaceProvider (more current than DB) */
+  workspaceSessionIds?: Id<"sessions">[];
   children: React.ReactNode;
 }) {
   const sessions = useQuery(api.sessions.list);
+  const workspaces = useQuery(api.workspaces.list);
   const removeSession = useMutation(api.sessions.remove);
   const removeMany = useMutation(api.sessions.removeMany);
   const router = useRouter();
   const toggleRef = useRef<HTMLInputElement>(null);
   const [showSearch, setShowSearch] = useState(false);
   const [showOld, setShowOld] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
   const hasUpdate = useUpdateAvailable();
 
-  const now = Date.now();
-  const recentSessions: SessionInfo[] = [];
-  const oldSessions: SessionInfo[] = [];
+  useEffect(() => {
+    const onChange = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", onChange);
+    return () => document.removeEventListener("fullscreenchange", onChange);
+  }, []);
 
-  if (sessions) {
-    for (const s of sessions) {
-      if (now - s.lastActivity > ONE_HOUR && !s.isStreaming) {
-        oldSessions.push(s);
-      } else {
-        recentSessions.push(s);
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 60000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const toggleFullscreen = useCallback(() => {
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    } else {
+      document.documentElement.requestFullscreen();
+    }
+  }, []);
+
+  // Build the full drawer list: standalone sessions + workspace groups,
+  // all sorted by most recent activity
+  type ListItem =
+    | { type: "session"; session: SessionInfo; lastActivity: number }
+    | { type: "workspace"; group: WorkspaceGroup; lastActivity: number };
+
+  const { recentItems, oldSessions, allWsSessionIds } = useMemo(() => {
+    // Collect all workspace session IDs and build group skeletons
+    const allIds = new Set<Id<"sessions">>();
+    const groupMap = new Map<
+      Id<"workspaces">,
+      { workspaceId: Id<"workspaces">; sessionIds: Set<Id<"sessions">> }
+    >();
+
+    if (workspaces) {
+      for (const ws of workspaces) {
+        const ids = extractSessionIds(ws.layout);
+        const idSet = new Set(ids);
+        for (const id of ids) allIds.add(id);
+        groupMap.set(ws._id, { workspaceId: ws._id, sessionIds: idSet });
       }
     }
-  }
+    if (workspaceSessionIds) {
+      for (const id of workspaceSessionIds) allIds.add(id);
+    }
+
+    // Classify sessions and populate groups
+    const standalone: SessionInfo[] = [];
+    const old: SessionInfo[] = [];
+    const sessionLookup = new Map<Id<"sessions">, SessionInfo>();
+
+    if (sessions) {
+      for (const s of sessions) {
+        sessionLookup.set(s._id, s);
+        const inWs = allIds.has(s._id);
+        if (now - s.lastActivity > ONE_HOUR && !s.isStreaming && !inWs) {
+          old.push(s);
+        } else if (!inWs) {
+          standalone.push(s);
+        }
+      }
+    }
+
+    // Build workspace groups with sessions and computed lastActivity
+    const groups: WorkspaceGroup[] = [];
+    for (const [, g] of groupMap) {
+      const groupSessions: SessionInfo[] = [];
+      let maxActivity = 0;
+      for (const id of g.sessionIds) {
+        const s = sessionLookup.get(id);
+        if (s) {
+          groupSessions.push(s);
+          if (s.lastActivity > maxActivity) maxActivity = s.lastActivity;
+        }
+      }
+      if (groupSessions.length > 0) {
+        groups.push({
+          workspaceId: g.workspaceId,
+          sessionIds: g.sessionIds,
+          sessions: groupSessions,
+          lastActivity: maxActivity,
+        });
+      }
+    }
+
+    // Interleave standalone sessions and workspace groups by recency
+    const items: ListItem[] = [];
+    for (const s of standalone) {
+      items.push({
+        type: "session",
+        session: s,
+        lastActivity: s.lastActivity,
+      });
+    }
+    for (const g of groups) {
+      items.push({ type: "workspace", group: g, lastActivity: g.lastActivity });
+    }
+    items.sort((a, b) => b.lastActivity - a.lastActivity);
+
+    return { recentItems: items, oldSessions: old, allWsSessionIds: allIds };
+  }, [workspaces, workspaceSessionIds, sessions, now]);
 
   const close = () => {
     if (toggleRef.current) toggleRef.current.checked = false;
@@ -60,10 +167,36 @@ export function SessionDrawer({
     router.push(`/session/${id}`);
   };
 
+  const handleNavigateWorkspace = (wsId: Id<"workspaces">) => {
+    close();
+    router.push(`/workspace/${wsId}`);
+  };
+
   const handleNewSession = () => {
     close();
     router.push("/session/new");
   };
+
+  const handleAddToWorkspace = (id: Id<"sessions">) => {
+    close();
+    onAddToWorkspace?.(id);
+  };
+
+  const renderRow = (session: SessionInfo) => (
+    <SessionRow
+      key={session._id}
+      session={session}
+      active={session._id === activeSessionId}
+      inWorkspace={allWsSessionIds.has(session._id)}
+      onNavigate={() => handleNavigate(session._id)}
+      onDelete={() => removeSession({ id: session._id })}
+      onAddToWorkspace={
+        onAddToWorkspace
+          ? () => handleAddToWorkspace(session._id)
+          : undefined
+      }
+    />
+  );
 
   return (
     <div className="drawer">
@@ -81,7 +214,7 @@ export function SessionDrawer({
           className="drawer-overlay"
         />
         <div className="bg-base-200 h-full w-72 flex flex-col">
-          <div className="p-4 pb-3 flex items-center justify-between shrink-0">
+          <div className="p-4 pb-3 pt-[calc(env(safe-area-inset-top)-8px)] flex items-center justify-between shrink-0">
             <span className="text-sm font-semibold opacity-70 flex items-center gap-1.5">
               <RocketLaunch size={16} weight="duotone" />
               Nebuchadnezzar
@@ -104,21 +237,44 @@ export function SessionDrawer({
             </div>
           </div>
           <div className="flex-1 overflow-y-auto bg-base-300/40">
-            {recentSessions.length > 0 && (
+            {recentItems.length > 0 && (
               <ul className="list">
-                {recentSessions.map((session) => (
-                  <SessionRow
-                    key={session._id}
-                    session={session}
-                    active={session._id === activeSessionId}
-                    onNavigate={() => handleNavigate(session._id)}
-                    onDelete={() => removeSession({ id: session._id })}
-                  />
-                ))}
+                {recentItems.map((item) => {
+                  if (item.type === "session") {
+                    return renderRow(item.session);
+                  }
+                  // Workspace group
+                  return (
+                    <li
+                      key={item.group.workspaceId}
+                      className="mx-2 my-1 rounded-lg border border-primary/20 overflow-hidden cursor-pointer active:bg-base-300/50"
+                      onClick={() =>
+                        handleNavigateWorkspace(item.group.workspaceId)
+                      }
+                    >
+                      <ul className="list">
+                        {item.group.sessions.map((s) => (
+                          <SessionRow
+                            key={s._id}
+                            session={s}
+                            active={s._id === activeSessionId}
+                            inWorkspace
+                            onNavigate={() =>
+                              handleNavigateWorkspace(item.group.workspaceId)
+                            }
+                            onDelete={() =>
+                              removeSession({ id: s._id })
+                            }
+                          />
+                        ))}
+                      </ul>
+                    </li>
+                  );
+                })}
               </ul>
             )}
             {sessions &&
-              recentSessions.length === 0 &&
+              recentItems.length === 0 &&
               oldSessions.length === 0 && (
                 <p className="text-center text-base-content/30 text-sm pt-8">
                   No sessions yet.
@@ -160,6 +316,7 @@ export function SessionDrawer({
                         key={session._id}
                         session={session}
                         active={session._id === activeSessionId}
+                        inWorkspace={false}
                         onNavigate={() => handleNavigate(session._id)}
                         onDelete={() => removeSession({ id: session._id })}
                       />
@@ -169,12 +326,12 @@ export function SessionDrawer({
               </div>
             )}
           </div>
-          <div className="p-3 shrink-0 border-t border-base-300">
+          <div className="p-3 pb-[max(0.75rem,calc(env(safe-area-inset-bottom)-16px))] shrink-0 border-t border-base-300 flex items-center gap-1">
             <Link
               href="/dashboard"
               onClick={close}
               prefetch={true}
-              className="btn btn-ghost btn-sm w-full justify-start gap-2 text-base-content/60"
+              className="btn btn-ghost btn-sm flex-1 justify-start gap-2 text-base-content/60"
             >
               <div className="indicator">
                 {hasUpdate && (
@@ -184,6 +341,17 @@ export function SessionDrawer({
               </div>
               Dashboard
             </Link>
+            <button
+              onClick={toggleFullscreen}
+              className="btn btn-ghost btn-sm btn-square text-base-content/60"
+              aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+            >
+              {isFullscreen ? (
+                <CornersIn size={18} weight="bold" />
+              ) : (
+                <CornersOut size={18} weight="bold" />
+              )}
+            </button>
           </div>
         </div>
       </div>
