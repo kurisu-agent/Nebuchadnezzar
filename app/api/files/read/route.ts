@@ -30,10 +30,7 @@ export async function GET(req: NextRequest) {
 
   const safePath = await validatePath(requestedPath);
   if (!safePath) {
-    return NextResponse.json(
-      { error: "Path not allowed" },
-      { status: 403 },
-    );
+    return NextResponse.json({ error: "Path not allowed" }, { status: 403 });
   }
 
   try {
@@ -54,9 +51,6 @@ export async function GET(req: NextRequest) {
     const content = await fs.readFile(safePath, "utf-8");
     return NextResponse.json({ content, path: safePath, size: stat.size });
   } catch (e) {
-    return NextResponse.json(
-      { error: (e as Error).message },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: (e as Error).message }, { status: 500 });
   }
 }

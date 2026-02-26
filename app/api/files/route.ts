@@ -19,24 +19,17 @@ async function validatePath(requestedPath: string): Promise<string | null> {
 }
 
 export async function GET(req: NextRequest) {
-  const requestedPath =
-    req.nextUrl.searchParams.get("path") || ALLOWED_ROOT;
+  const requestedPath = req.nextUrl.searchParams.get("path") || ALLOWED_ROOT;
 
   const safePath = await validatePath(requestedPath);
   if (!safePath) {
-    return NextResponse.json(
-      { error: "Path not allowed" },
-      { status: 403 },
-    );
+    return NextResponse.json({ error: "Path not allowed" }, { status: 403 });
   }
 
   try {
     const stat = await fs.stat(safePath);
     if (!stat.isDirectory()) {
-      return NextResponse.json(
-        { error: "Not a directory" },
-        { status: 400 },
-      );
+      return NextResponse.json({ error: "Not a directory" }, { status: 400 });
     }
 
     const dirents = await fs.readdir(safePath, { withFileTypes: true });
@@ -70,9 +63,6 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ entries, path: safePath });
   } catch (e) {
-    return NextResponse.json(
-      { error: (e as Error).message },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: (e as Error).message }, { status: 500 });
   }
 }

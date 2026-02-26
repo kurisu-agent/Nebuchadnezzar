@@ -1,19 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
-import { Tree, NodeRendererProps } from "react-arborist";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { getIcon } from "material-file-icons";
 import {
   FolderSimple,
   FolderOpen,
-  File,
-  FileCode,
-  FileTs,
-  FileJs,
-  FileCss,
-  FileMd,
   CaretRight,
   CaretDown,
 } from "@phosphor-icons/react";
+
+// ─── Types ───────────────────────────────────────────────────
 
 export interface FileEntry {
   name: string;
@@ -32,74 +28,17 @@ interface TreeNode {
   children?: TreeNode[];
 }
 
-function fileIcon(name: string) {
-  const ext = name.split(".").pop()?.toLowerCase();
-  const size = 16;
-  const weight = "duotone" as const;
-  switch (ext) {
-    case "ts":
-    case "tsx":
-      return <FileTs size={size} weight={weight} className="text-info" />;
-    case "js":
-    case "jsx":
-    case "mjs":
-      return <FileJs size={size} weight={weight} className="text-warning" />;
-    case "css":
-      return <FileCss size={size} weight={weight} className="text-secondary" />;
-    case "json":
-    case "jsonl":
-      return <FileCode size={size} weight={weight} className="text-success" />;
-    case "md":
-      return <FileMd size={size} weight={weight} className="text-accent" />;
-    default:
-      return <File size={size} weight={weight} className="opacity-60" />;
-  }
+interface FileTreeProps {
+  rootPath: string;
+  onSelectFile: (path: string) => void;
 }
+
+// ─── Helpers ─────────────────────────────────────────────────
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function Node({ node, style }: NodeRendererProps<TreeNode>) {
-  const isDir = node.data.type === "directory";
-
-  return (
-    <div
-      style={style}
-      className={`flex items-center gap-1.5 px-2 py-1 cursor-pointer select-none
-        active:bg-base-300 transition-colors rounded-md
-        ${node.isSelected ? "bg-base-300" : ""}`}
-      onClick={(e) => node.handleClick(e)}
-    >
-      {isDir ? (
-        <>
-          {node.isOpen ? (
-            <CaretDown size={12} weight="bold" className="shrink-0 opacity-50" />
-          ) : (
-            <CaretRight size={12} weight="bold" className="shrink-0 opacity-50" />
-          )}
-          {node.isOpen ? (
-            <FolderOpen size={16} weight="duotone" className="shrink-0 text-warning" />
-          ) : (
-            <FolderSimple size={16} weight="duotone" className="shrink-0 text-warning" />
-          )}
-        </>
-      ) : (
-        <>
-          <span className="w-3 shrink-0" />
-          {fileIcon(node.data.name)}
-        </>
-      )}
-      <span className="truncate text-sm">{node.data.name}</span>
-      {!isDir && node.data.size > 0 && (
-        <span className="ml-auto text-xs opacity-40 shrink-0">
-          {formatSize(node.data.size)}
-        </span>
-      )}
-    </div>
-  );
 }
 
 async function fetchDir(dirPath: string): Promise<FileEntry[]> {
@@ -120,20 +59,129 @@ function entriesToNodes(entries: FileEntry[]): TreeNode[] {
   }));
 }
 
-interface FileTreeProps {
-  rootPath: string;
+// ─── FileIcon (material-file-icons) ─────────────────────────
+
+function FileIcon({ filename }: { filename: string }) {
+  return (
+    <span
+      className="shrink-0 inline-flex items-center justify-center [&>svg]:w-full [&>svg]:h-full"
+      style={{ width: 16, height: 16 }}
+      dangerouslySetInnerHTML={{ __html: getIcon(filename).svg }}
+    />
+  );
+}
+
+// ─── Recursive TreeNodeItem ─────────────────────────────────
+
+interface TreeNodeItemProps {
+  node: TreeNode;
+  selectedPath: string | null;
+  openDirs: Set<string>;
+  loadingDirs: Set<string>;
+  onToggleDir: (path: string) => void;
   onSelectFile: (path: string) => void;
 }
+
+function TreeNodeItem({
+  node,
+  selectedPath,
+  openDirs,
+  loadingDirs,
+  onToggleDir,
+  onSelectFile,
+}: TreeNodeItemProps) {
+  const isDir = node.type === "directory";
+  const isOpen = openDirs.has(node.path);
+  const isLoading = loadingDirs.has(node.path);
+  const isSelected = node.path === selectedPath;
+
+  if (isDir) {
+    return (
+      <li>
+        <span
+          className={`menu-dropdown-toggle ${isOpen ? "menu-dropdown-show" : ""} active:bg-base-300`}
+          onClick={() => onToggleDir(node.path)}
+        >
+          {isLoading ? (
+            <span className="loading loading-spinner loading-xs shrink-0" />
+          ) : isOpen ? (
+            <CaretDown
+              size={12}
+              weight="bold"
+              className="shrink-0 opacity-50"
+            />
+          ) : (
+            <CaretRight
+              size={12}
+              weight="bold"
+              className="shrink-0 opacity-50"
+            />
+          )}
+          {isOpen ? (
+            <FolderOpen
+              size={16}
+              weight="duotone"
+              className="shrink-0 text-warning"
+            />
+          ) : (
+            <FolderSimple
+              size={16}
+              weight="duotone"
+              className="shrink-0 text-warning"
+            />
+          )}
+          <span className="truncate">{node.name}</span>
+        </span>
+        <ul className={`menu-dropdown ${isOpen ? "menu-dropdown-show" : ""}`}>
+          {node.children?.map((child) => (
+            <TreeNodeItem
+              key={child.id}
+              node={child}
+              selectedPath={selectedPath}
+              openDirs={openDirs}
+              loadingDirs={loadingDirs}
+              onToggleDir={onToggleDir}
+              onSelectFile={onSelectFile}
+            />
+          ))}
+        </ul>
+      </li>
+    );
+  }
+
+  return (
+    <li>
+      <a
+        className={`active:bg-base-300 ${isSelected ? "menu-active" : ""}`}
+        onClick={() => onSelectFile(node.path)}
+      >
+        <FileIcon filename={node.name} />
+        <span className="truncate">{node.name}</span>
+        {node.size > 0 && (
+          <span className="ml-auto text-xs opacity-40 shrink-0">
+            {formatSize(node.size)}
+          </span>
+        )}
+      </a>
+    </li>
+  );
+}
+
+// ─── Main FileTree Component ────────────────────────────────
 
 export default function FileTree({ rootPath, onSelectFile }: FileTreeProps) {
   const [data, setData] = useState<TreeNode[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [height, setHeight] = useState(400);
-
-  // Track which directories have been loaded
+  const [openDirs, setOpenDirs] = useState<Set<string>>(new Set());
+  const [loadingDirs, setLoadingDirs] = useState<Set<string>>(new Set());
+  const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const loadedDirs = useRef<Set<string>>(new Set());
+  const openDirsRef = useRef(openDirs);
+
+  useEffect(() => {
+    openDirsRef.current = openDirs;
+  }, [openDirs]);
 
   useEffect(() => {
     fetchDir(rootPath)
@@ -145,27 +193,25 @@ export default function FileTree({ rootPath, onSelectFile }: FileTreeProps) {
       .finally(() => setLoading(false));
   }, [rootPath]);
 
-  // Measure container height for virtualization
-  useEffect(() => {
-    if (!containerRef.current) return;
-    const obs = new ResizeObserver(([entry]) => {
-      setHeight(entry.contentRect.height);
-    });
-    obs.observe(containerRef.current);
-    return () => obs.disconnect();
-  }, []);
+  const handleToggleDir = useCallback(async (dirPath: string) => {
+    if (openDirsRef.current.has(dirPath)) {
+      setOpenDirs((prev) => {
+        const next = new Set(prev);
+        next.delete(dirPath);
+        return next;
+      });
+      return;
+    }
 
-  const handleToggle = useCallback(
-    async (id: string) => {
-      if (loadedDirs.current.has(id)) return;
-
+    if (!loadedDirs.current.has(dirPath)) {
+      setLoadingDirs((prev) => new Set(prev).add(dirPath));
       try {
-        const entries = await fetchDir(id);
-        loadedDirs.current.add(id);
+        const entries = await fetchDir(dirPath);
+        loadedDirs.current.add(dirPath);
         setData((prev) => {
           const update = (nodes: TreeNode[]): TreeNode[] =>
             nodes.map((n) => {
-              if (n.id === id) {
+              if (n.id === dirPath) {
                 return { ...n, children: entriesToNodes(entries) };
               }
               if (n.children) {
@@ -176,17 +222,23 @@ export default function FileTree({ rootPath, onSelectFile }: FileTreeProps) {
           return update(prev);
         });
       } catch {
-        // ignore load errors on expand
+        return;
+      } finally {
+        setLoadingDirs((prev) => {
+          const next = new Set(prev);
+          next.delete(dirPath);
+          return next;
+        });
       }
-    },
-    [],
-  );
+    }
 
-  const handleActivate = useCallback(
-    (node: { data: TreeNode }) => {
-      if (node.data.type === "file") {
-        onSelectFile(node.data.path);
-      }
+    setOpenDirs((prev) => new Set(prev).add(dirPath));
+  }, []);
+
+  const handleSelectFile = useCallback(
+    (path: string) => {
+      setSelectedPath(path);
+      onSelectFile(path);
     },
     [onSelectFile],
   );
@@ -208,23 +260,20 @@ export default function FileTree({ rootPath, onSelectFile }: FileTreeProps) {
   }
 
   return (
-    <div ref={containerRef} className="flex-1 overflow-hidden">
-      <Tree<TreeNode>
-        data={data}
-        width="100%"
-        height={height}
-        rowHeight={36}
-        indent={16}
-        openByDefault={false}
-        disableDrag={true}
-        disableDrop={true}
-        disableEdit={true}
-        disableMultiSelection={true}
-        onToggle={handleToggle}
-        onActivate={handleActivate}
-      >
-        {Node}
-      </Tree>
+    <div className="flex-1 overflow-y-auto">
+      <ul className="menu menu-sm w-full">
+        {data.map((node) => (
+          <TreeNodeItem
+            key={node.id}
+            node={node}
+            selectedPath={selectedPath}
+            openDirs={openDirs}
+            loadingDirs={loadingDirs}
+            onToggleDir={handleToggleDir}
+            onSelectFile={handleSelectFile}
+          />
+        ))}
+      </ul>
     </div>
   );
 }

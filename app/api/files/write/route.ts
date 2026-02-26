@@ -32,18 +32,12 @@ export async function POST(req: NextRequest) {
 
     const safePath = await validatePath(filePath);
     if (!safePath) {
-      return NextResponse.json(
-        { error: "Path not allowed" },
-        { status: 403 },
-      );
+      return NextResponse.json({ error: "Path not allowed" }, { status: 403 });
     }
 
     await fs.writeFile(safePath, content, "utf-8");
     return NextResponse.json({ ok: true, path: safePath });
   } catch (e) {
-    return NextResponse.json(
-      { error: (e as Error).message },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: (e as Error).message }, { status: 500 });
   }
 }
