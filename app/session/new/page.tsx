@@ -130,11 +130,7 @@ export default function NewSessionPage() {
 
         <div className="flex-1 overflow-y-auto p-4 flex items-center justify-center">
           <div className="text-center opacity-30">
-            <RocketLaunch
-              size={48}
-              weight="duotone"
-              className="mx-auto mb-3"
-            />
+            <RocketLaunch size={48} weight="duotone" className="mx-auto mb-3" />
             <p className="text-sm">Start a conversation</p>
           </div>
         </div>

@@ -88,7 +88,9 @@ export default function TrashPage() {
               ) : (
                 <Trash size={14} weight="bold" />
               )}
-              <span className="text-xs">{isEmptying ? "Emptying..." : "Empty trash"}</span>
+              <span className="text-xs">
+                {isEmptying ? "Emptying..." : "Empty trash"}
+              </span>
             </button>
             <button
               onClick={() => setShowTrashSearch(true)}

@@ -7,7 +7,10 @@ export default function AppearancePage() {
     <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-3">
       <div className="alert alert-info text-xs">
         <Wrench size={16} weight="duotone" />
-        <span>This page is under construction. Appearance settings are not yet functional.</span>
+        <span>
+          This page is under construction. Appearance settings are not yet
+          functional.
+        </span>
       </div>
 
       <div className="card bg-base-200 card-sm">
@@ -73,7 +76,12 @@ export default function AppearancePage() {
           </h2>
           <div className="flex items-center justify-between">
             <span className="text-sm">Show avatars</span>
-            <input type="checkbox" className="toggle toggle-sm" disabled checked />
+            <input
+              type="checkbox"
+              className="toggle toggle-sm"
+              disabled
+              checked
+            />
           </div>
           <div className="flex items-center justify-between">
             <span className="text-sm">Compact mode</span>
@@ -81,7 +89,6 @@ export default function AppearancePage() {
           </div>
         </div>
       </div>
-
     </div>
   );
 }

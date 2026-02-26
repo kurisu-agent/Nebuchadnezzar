@@ -67,9 +67,5 @@ export async function generateTitleForSession(sessionId: Id<"sessions">) {
     .reverse()
     .find((m) => m.role === "assistant");
 
-  await generateTitle(
-    sessionId,
-    messages,
-    lastAssistant?.content ?? "",
-  );
+  await generateTitle(sessionId, messages, lastAssistant?.content ?? "");
 }

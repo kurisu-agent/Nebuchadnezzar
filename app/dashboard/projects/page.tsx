@@ -19,7 +19,10 @@ export default function ProjectsPage() {
     <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-3">
       <div className="alert alert-info text-xs">
         <Wrench size={16} weight="duotone" />
-        <span>This page is under construction. Project management is not yet functional.</span>
+        <span>
+          This page is under construction. Project management is not yet
+          functional.
+        </span>
       </div>
 
       <div className="card bg-base-200 card-sm">
@@ -78,7 +81,6 @@ export default function ProjectsPage() {
           </p>
         </div>
       </div>
-
     </div>
   );
 }

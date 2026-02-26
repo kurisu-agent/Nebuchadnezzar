@@ -27,10 +27,7 @@ import {
   ArrowClockwise,
   ImageSquare,
 } from "@phosphor-icons/react";
-import {
-  TransformWrapper,
-  TransformComponent,
-} from "react-zoom-pan-pinch";
+import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 import {
   ArrowCounterClockwise,
   DownloadSimple,

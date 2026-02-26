@@ -9,7 +9,14 @@
     "url": "https://github.com/kurisu-agent/Nebuchadnezzar.git"
   },
   "homepage": "https://github.com/kurisu-agent/Nebuchadnezzar",
-  "keywords": ["claude", "claude-code", "ai", "agent-sdk", "nextjs", "convex"],
+  "keywords": [
+    "claude",
+    "claude-code",
+    "ai",
+    "agent-sdk",
+    "nextjs",
+    "convex"
+  ],
   "scripts": {
     "dev": "next dev --turbopack",
     "dev:convex": "CONVEX_AGENT_MODE=anonymous convex dev",

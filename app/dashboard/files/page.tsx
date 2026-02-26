@@ -1,7 +1,11 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import { ArrowLeft, FloppyDisk, FolderSimpleDashed } from "@phosphor-icons/react";
+import {
+  ArrowLeft,
+  FloppyDisk,
+  FolderSimpleDashed,
+} from "@phosphor-icons/react";
 import FileTree from "@/app/components/file-tree";
 import FileEditor from "@/app/components/file-editor";
 

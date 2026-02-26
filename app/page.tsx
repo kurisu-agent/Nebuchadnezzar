@@ -42,7 +42,10 @@ export default function Home() {
           Nebuchadnezzar
         </h1>
         <p className="text-base-content/40 text-sm mb-8">Claude Code UI</p>
-        <button onClick={() => router.push("/session/new")} className="btn btn-primary gap-2">
+        <button
+          onClick={() => router.push("/session/new")}
+          className="btn btn-primary gap-2"
+        >
           <Plus size={18} weight="bold" />
           New Session
         </button>
@@ -71,7 +74,8 @@ export default function Home() {
               >
                 <span className="flex items-center gap-1.5">
                   <ClockCounterClockwise size={14} weight="duotone" />
-                  {oldSessions.length} older session{oldSessions.length !== 1 ? "s" : ""}
+                  {oldSessions.length} older session
+                  {oldSessions.length !== 1 ? "s" : ""}
                 </span>
                 <CaretDown
                   size={12}
@@ -117,7 +121,8 @@ export default function Home() {
             >
               <span className="flex items-center gap-1.5">
                 <ClockCounterClockwise size={14} weight="duotone" />
-                {oldSessions.length} older session{oldSessions.length !== 1 ? "s" : ""}
+                {oldSessions.length} older session
+                {oldSessions.length !== 1 ? "s" : ""}
               </span>
               <CaretDown
                 size={12}

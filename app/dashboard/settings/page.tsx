@@ -7,7 +7,9 @@ export default function SettingsPage() {
     <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-3">
       <div className="alert alert-info text-xs">
         <Wrench size={16} weight="duotone" />
-        <span>This page is under construction. Settings are not yet functional.</span>
+        <span>
+          This page is under construction. Settings are not yet functional.
+        </span>
       </div>
 
       <div className="card bg-base-200 card-sm">
@@ -52,11 +54,15 @@ export default function SettingsPage() {
           </div>
           <div className="flex items-center justify-between">
             <span className="text-sm">Auto-approve tools</span>
-            <input type="checkbox" className="toggle toggle-sm" disabled checked />
+            <input
+              type="checkbox"
+              className="toggle toggle-sm"
+              disabled
+              checked
+            />
           </div>
         </div>
       </div>
-
     </div>
   );
 }
