@@ -268,6 +268,7 @@ async function processChatStream(
       let lastFlushTime = 0;
       let sdkSessionId: string | undefined;
       const steps: string[] = [];
+      let planning = false;
       let pendingFlush: Promise<void> = Promise.resolve();
 
       function flushStreaming(content: string) {
@@ -278,6 +279,7 @@ async function processChatStream(
             messageId,
             content,
             streaming: true,
+            planning: planning || undefined,
           })
           .then(() => {})
           .catch((flushErr) => console.error("[stream flush error]", flushErr));
@@ -315,7 +317,16 @@ async function processChatStream(
             fullContent = text;
             flushStreaming(fullContent);
           }
-          steps.push(...extractSteps(message));
+          const newSteps = extractSteps(message);
+          steps.push(...newSteps);
+          // Detect plan mode transitions from tool use
+          for (const block of message.message.content) {
+            if (block.type === "tool_use") {
+              const tb = block as { type: "tool_use"; name: string };
+              if (tb.name === "EnterPlanMode") planning = true;
+              if (tb.name === "ExitPlanMode") planning = false;
+            }
+          }
         }
 
         if (message.type === "result") {

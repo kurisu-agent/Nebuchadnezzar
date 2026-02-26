@@ -15,6 +15,7 @@ export default defineSchema({
     role: v.union(v.literal("user"), v.literal("assistant")),
     content: v.string(),
     streaming: v.boolean(),
+    planning: v.optional(v.boolean()),
     cancelled: v.optional(v.boolean()),
     error: v.optional(v.boolean()),
     steps: v.optional(v.array(v.string())),
@@ -27,6 +28,10 @@ export default defineSchema({
     attachments: v.optional(v.array(v.id("uploads"))),
     createdAt: v.number(),
   }).index("by_session", ["sessionId", "createdAt"]),
+  workspaces: defineTable({
+    layout: v.string(),
+    updatedAt: v.number(),
+  }),
   updateInfo: defineTable({
     remoteSha: v.string(),
     remoteMessage: v.string(),

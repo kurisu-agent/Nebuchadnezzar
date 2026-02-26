@@ -21,6 +21,7 @@ export const list = query({
           ...session,
           lastActivity,
           isStreaming: latestMsg?.streaming ?? false,
+          isPlanning: (latestMsg?.streaming && latestMsg?.planning) ?? false,
           hasUnseen,
         };
       }),

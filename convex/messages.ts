@@ -57,6 +57,7 @@ export const updateContent = mutation({
     messageId: v.id("messages"),
     content: v.string(),
     streaming: v.boolean(),
+    planning: v.optional(v.boolean()),
     steps: v.optional(v.array(v.string())),
     error: v.optional(v.boolean()),
   },
@@ -65,6 +66,9 @@ export const updateContent = mutation({
       content: args.content,
       streaming: args.streaming,
     };
+    if (args.planning !== undefined) {
+      patch.planning = args.planning;
+    }
     if (args.steps !== undefined) {
       patch.steps = args.steps;
     }
