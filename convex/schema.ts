@@ -27,6 +27,13 @@ export default defineSchema({
     attachments: v.optional(v.array(v.id("uploads"))),
     createdAt: v.number(),
   }).index("by_session", ["sessionId", "createdAt"]),
+  updateInfo: defineTable({
+    remoteSha: v.string(),
+    remoteMessage: v.string(),
+    remoteAuthor: v.string(),
+    remoteDate: v.string(),
+    checkedAt: v.number(),
+  }),
   uploads: defineTable({
     storageId: v.id("_storage"),
     thumbnailStorageId: v.optional(v.id("_storage")),

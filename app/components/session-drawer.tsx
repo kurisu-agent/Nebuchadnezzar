@@ -17,6 +17,7 @@ import {
 } from "@phosphor-icons/react";
 import { SessionRow, SessionInfo } from "./session-row";
 import { SearchModal } from "./search-modal";
+import { useUpdateAvailable } from "@/app/hooks/use-update-check";
 
 const ONE_HOUR = 60 * 60 * 1000;
 
@@ -34,6 +35,7 @@ export function SessionDrawer({
   const toggleRef = useRef<HTMLInputElement>(null);
   const [showSearch, setShowSearch] = useState(false);
   const [showOld, setShowOld] = useState(false);
+  const hasUpdate = useUpdateAvailable();
 
   const now = Date.now();
   const recentSessions: SessionInfo[] = [];
@@ -115,11 +117,13 @@ export function SessionDrawer({
                 ))}
               </ul>
             )}
-            {sessions && recentSessions.length === 0 && oldSessions.length === 0 && (
-              <p className="text-center text-base-content/30 text-sm pt-8">
-                No sessions yet.
-              </p>
-            )}
+            {sessions &&
+              recentSessions.length === 0 &&
+              oldSessions.length === 0 && (
+                <p className="text-center text-base-content/30 text-sm pt-8">
+                  No sessions yet.
+                </p>
+              )}
             {oldSessions.length > 0 && (
               <div className="border-t border-base-300">
                 <button
@@ -128,7 +132,8 @@ export function SessionDrawer({
                 >
                   <span className="flex items-center gap-1.5">
                     <ClockCounterClockwise size={14} weight="duotone" />
-                    {oldSessions.length} older session{oldSessions.length !== 1 ? "s" : ""}
+                    {oldSessions.length} older session
+                    {oldSessions.length !== 1 ? "s" : ""}
                   </span>
                   <CaretDown
                     size={12}
@@ -171,7 +176,12 @@ export function SessionDrawer({
               prefetch={true}
               className="btn btn-ghost btn-sm w-full justify-start gap-2 text-base-content/60"
             >
-              <GearSix size={18} weight="duotone" />
+              <div className="indicator">
+                {hasUpdate && (
+                  <span className="indicator-item badge badge-xs badge-primary" />
+                )}
+                <GearSix size={18} weight="duotone" />
+              </div>
               Dashboard
             </Link>
           </div>
