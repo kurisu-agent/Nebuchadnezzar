@@ -1,6 +1,7 @@
 "use client";
 
-import type { ComponentType, ReactNode } from "react";
+import type { ReactNode } from "react";
+import type { Icon } from "@phosphor-icons/react";
 
 type BannerVariant = "info" | "success" | "warning" | "error";
 
@@ -20,7 +21,7 @@ export function ActionBanner({
   loading,
   variant = "info",
 }: {
-  icon: ComponentType<{ size?: number; weight?: string; className?: string }>;
+  icon: Icon;
   title: string;
   description?: ReactNode;
   actionLabel: string;
