@@ -33,6 +33,12 @@ export function ResizeHandle({
       (isHorizontal ? firstChild.offsetWidth : firstChild.offsetHeight) /
       parentSize;
 
+    const dim = isHorizontal ? "width" : "height";
+    const secondChild = parent.children[2] as HTMLElement;
+    let currentRatio = startRatio;
+
+    actions.setDragging(true);
+
     const cleanup = () => {
       el.removeEventListener("pointermove", onPointerMove);
       el.removeEventListener("pointerup", onEnd);
@@ -40,12 +46,18 @@ export function ResizeHandle({
       el.removeEventListener("lostpointercapture", onEnd);
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
+      // Sync final ratio to React state
+      actions.setRatio(splitId, currentRatio);
+      actions.setDragging(false);
     };
 
     const onPointerMove = (ev: PointerEvent) => {
       const delta =
         ((isHorizontal ? ev.clientX : ev.clientY) - startPos) / parentSize;
-      actions.setRatio(splitId, startRatio + delta);
+      currentRatio = Math.max(0.15, Math.min(0.85, startRatio + delta));
+      // Direct DOM update — no React re-render
+      firstChild.style[dim] = `${currentRatio * 100}%`;
+      secondChild.style[dim] = `${(1 - currentRatio) * 100}%`;
     };
 
     const onEnd = () => cleanup();

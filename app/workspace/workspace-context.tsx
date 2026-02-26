@@ -61,7 +61,7 @@ function findLeafBySession(
 }
 
 /** Find the parent split of a node by ID, and which child it is */
-function findParent(
+export function findParent(
   node: PaneNode,
   targetId: string,
 ): { parent: PaneSplit; which: "first" | "second" } | null {
@@ -93,6 +93,19 @@ export function firstLeaf(node: PaneNode): PaneLeaf {
   return firstLeaf(node.first);
 }
 
+/** Get the move direction available for a pane, or null if it can't move */
+export function getMoveDirection(
+  root: PaneNode,
+  paneId: string,
+): "left" | "right" | "up" | "down" | null {
+  const info = findParent(root, paneId);
+  if (!info) return null;
+  if (info.parent.direction === "horizontal") {
+    return info.which === "first" ? "right" : "left";
+  }
+  return info.which === "first" ? "down" : "up";
+}
+
 const WorkspaceContext = createContext<{
   state: WorkspaceState;
   actions: WorkspaceActions;
@@ -113,13 +126,16 @@ export function WorkspaceProvider({
   initialTree?: PaneNode;
   children: React.ReactNode;
 }) {
-  const [state, setState] = useState<WorkspaceState>(() => {
+  const [state, setState] = useState<Omit<WorkspaceState, "isWorkspaceView">>(() => {
     if (initialTree) {
-      return { root: initialTree, focusedPaneId: firstLeaf(initialTree).id, inputFocusedPaneId: null, isWorkspaceView: true };
+      return { root: initialTree, focusedPaneId: firstLeaf(initialTree).id, inputFocusedPaneId: null, isDragging: false };
     }
     const leaf = makeLeaf(initialSessionId ?? null);
-    return { root: leaf, focusedPaneId: leaf.id, inputFocusedPaneId: null, isWorkspaceView: false };
+    return { root: leaf, focusedPaneId: leaf.id, inputFocusedPaneId: null, isDragging: false };
   });
+
+  // Derive isWorkspaceView from tree structure
+  const isWorkspaceView = state.root.type === "split";
 
   // Keep focused pane's session in sync with the URL session
   // (only for single-session mode on /session/[id], not /workspace)
@@ -144,7 +160,7 @@ export function WorkspaceProvider({
         second: newLeaf,
         ratio: 0.5,
       }));
-      return { root: newRoot, focusedPaneId: newLeaf.id };
+      return { ...prev, root: newRoot, focusedPaneId: newLeaf.id };
     });
   }, []);
 
@@ -170,7 +186,7 @@ export function WorkspaceProvider({
           ? firstLeaf(sibling).id
           : prev.focusedPaneId;
 
-      return { root: newRoot, focusedPaneId: newFocus };
+      return { ...prev, root: newRoot, focusedPaneId: newFocus };
     });
   }, []);
 
@@ -184,14 +200,40 @@ export function WorkspaceProvider({
     (paneId: string, sessionId: Id<"sessions">) => {
       setState((prev) => ({
         ...prev,
+        root: mapTree(prev.root, paneId, (node) => {
+          const { iframeUrl: _, ...rest } = node as PaneLeaf;
+          return { ...rest, sessionId };
+        }),
+      }));
+    },
+    [],
+  );
+
+  const setIframeForPane = useCallback(
+    (paneId: string, url: string) => {
+      setState((prev) => ({
+        ...prev,
         root: mapTree(prev.root, paneId, (node) => ({
           ...node,
-          sessionId,
+          sessionId: null,
+          iframeUrl: url,
         })),
       }));
     },
     [],
   );
+
+  const swapPane = useCallback((paneId: string) => {
+    setState((prev) => {
+      const parentInfo = findParent(prev.root, paneId);
+      if (!parentInfo) return prev;
+      const newRoot = mapTree(prev.root, parentInfo.parent.id, (node) => {
+        const split = node as PaneSplit;
+        return { ...split, first: split.second, second: split.first };
+      });
+      return { ...prev, root: newRoot };
+    });
+  }, []);
 
   const setRatio = useCallback((splitId: string, ratio: number) => {
     const clamped = Math.max(0.15, Math.min(0.85, ratio));
@@ -223,7 +265,7 @@ export function WorkspaceProvider({
         ratio: 0.5,
       }));
 
-      return { root: newRoot, focusedPaneId: newLeaf.id };
+      return { ...prev, root: newRoot, focusedPaneId: newLeaf.id };
     });
   }, []);
 
@@ -252,6 +294,12 @@ export function WorkspaceProvider({
     );
   }, []);
 
+  const setDragging = useCallback((dragging: boolean) => {
+    setState((prev) =>
+      prev.isDragging === dragging ? prev : { ...prev, isDragging: dragging },
+    );
+  }, []);
+
   const actions = useMemo<WorkspaceActions>(
     () => ({
       splitPane,
@@ -264,6 +312,9 @@ export function WorkspaceProvider({
       removeSessionPane,
       getSessionIds,
       setInputFocused,
+      setDragging,
+      setIframeForPane,
+      swapPane,
     }),
     [
       splitPane,
@@ -276,11 +327,14 @@ export function WorkspaceProvider({
       removeSessionPane,
       getSessionIds,
       setInputFocused,
+      setDragging,
+      setIframeForPane,
+      swapPane,
     ],
   );
 
   return (
-    <WorkspaceContext.Provider value={{ state, actions }}>
+    <WorkspaceContext.Provider value={{ state: { ...state, isWorkspaceView }, actions }}>
       {children}
     </WorkspaceContext.Provider>
   );

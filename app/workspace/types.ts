@@ -6,6 +6,7 @@ export interface PaneLeaf {
   type: "leaf";
   id: string;
   sessionId: Id<"sessions"> | null;
+  iframeUrl?: string;
 }
 
 export interface PaneSplit {
@@ -26,6 +27,8 @@ export interface WorkspaceState {
   inputFocusedPaneId: string | null;
   /** True when viewing a multi-pane workspace (vs a single session page) */
   isWorkspaceView: boolean;
+  /** True while a resize handle is being dragged */
+  isDragging: boolean;
 }
 
 export interface WorkspaceActions {
@@ -44,4 +47,10 @@ export interface WorkspaceActions {
   getSessionIds: () => Id<"sessions">[];
   /** Set which pane has its chat input focused (null to clear) */
   setInputFocused: (paneId: string | null) => void;
+  /** Set whether a resize handle is being dragged */
+  setDragging: (dragging: boolean) => void;
+  /** Set an iframe URL for a pane */
+  setIframeForPane: (paneId: string, url: string) => void;
+  /** Swap a pane with its sibling in the parent split */
+  swapPane: (paneId: string) => void;
 }

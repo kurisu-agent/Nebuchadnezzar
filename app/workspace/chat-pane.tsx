@@ -13,9 +13,14 @@ import {
   ImageSquare,
   Columns,
   Rows,
-  List,
+  PencilSimple,
+  ArrowLeft,
+  ArrowRight,
+  ArrowUp,
+  ArrowDown,
 } from "@phosphor-icons/react";
 import { useUpload } from "@/app/hooks/use-upload";
+import { TopBar } from "@/app/components/top-bar";
 import { formatDateLabel, formatTime } from "@/app/components/chat/utils";
 import { StreamingMarkdown } from "@/app/components/chat/streaming-markdown";
 import { CollapsibleMessage } from "@/app/components/chat/collapsible-message";
@@ -24,7 +29,7 @@ import { MessageImages } from "@/app/components/chat/message-images";
 import { AttachmentsPopover } from "@/app/components/chat/attachments-popover";
 import { QueuedMessageRow } from "@/app/components/chat/queued-message-row";
 import { EditTitleModal } from "@/app/session/[id]/edit-title-modal";
-import { useWorkspace } from "./workspace-context";
+import { useWorkspace, getMoveDirection } from "./workspace-context";
 import { useKeyboardVisible } from "./use-keyboard-visible";
 import { SessionPicker } from "./session-picker";
 
@@ -41,7 +46,8 @@ function WorkspacePaneNavbar({
   const isStreaming = messages?.some((m) => m.streaming) ?? false;
   const isPlanning =
     messages?.some((m) => m.streaming && m.planning) ?? false;
-  const { actions } = useWorkspace();
+  const { state, actions } = useWorkspace();
+  const moveDir = getMoveDirection(state.root, paneId);
 
   return (
     <div
@@ -79,6 +85,17 @@ function WorkspacePaneNavbar({
           tabIndex={0}
           className="dropdown-content z-10 menu bg-base-200 rounded-box shadow-lg w-44 p-2 mt-1"
         >
+          {moveDir && (
+            <li>
+              <button onClick={() => { (document.activeElement as HTMLElement)?.blur(); actions.swapPane(paneId); }}>
+                {moveDir === "left" && <ArrowLeft size={16} weight="bold" />}
+                {moveDir === "right" && <ArrowRight size={16} weight="bold" />}
+                {moveDir === "up" && <ArrowUp size={16} weight="bold" />}
+                {moveDir === "down" && <ArrowDown size={16} weight="bold" />}
+                Move {moveDir.charAt(0).toUpperCase() + moveDir.slice(1)}
+              </button>
+            </li>
+          )}
           <li>
             <button onClick={() => actions.splitPane(paneId, "horizontal")}>
               <Columns size={16} weight="duotone" />
@@ -103,6 +120,62 @@ function WorkspacePaneNavbar({
   );
 }
 
+function PaneMenu({
+  paneId,
+  actions,
+  moveDir,
+}: {
+  paneId: string;
+  actions: ReturnType<typeof useWorkspace>["actions"];
+  moveDir: "left" | "right" | "up" | "down" | null;
+}) {
+  return (
+    <div className="dropdown">
+      <button
+        tabIndex={0}
+        className="btn btn-ghost btn-sm btn-square"
+        aria-label="Pane menu"
+      >
+        <Columns size={16} weight="bold" />
+      </button>
+      <ul
+        tabIndex={0}
+        className="dropdown-content z-10 menu bg-base-200 rounded-box shadow-lg w-44 p-2 mt-1"
+      >
+        {moveDir && (
+          <li>
+            <button onClick={() => { (document.activeElement as HTMLElement)?.blur(); actions.swapPane(paneId); }}>
+              {moveDir === "left" && <ArrowLeft size={16} weight="bold" />}
+              {moveDir === "right" && <ArrowRight size={16} weight="bold" />}
+              {moveDir === "up" && <ArrowUp size={16} weight="bold" />}
+              {moveDir === "down" && <ArrowDown size={16} weight="bold" />}
+              Move {moveDir.charAt(0).toUpperCase() + moveDir.slice(1)}
+            </button>
+          </li>
+        )}
+        <li>
+          <button onClick={() => actions.splitPane(paneId, "horizontal")}>
+            <Columns size={16} weight="duotone" />
+            Split Right
+          </button>
+        </li>
+        <li>
+          <button onClick={() => actions.splitPane(paneId, "vertical")}>
+            <Rows size={16} weight="duotone" />
+            Split Down
+          </button>
+        </li>
+        <li>
+          <button onClick={() => actions.closePane(paneId)}>
+            <X size={16} weight="bold" />
+            Close Pane
+          </button>
+        </li>
+      </ul>
+    </div>
+  );
+}
+
 function FullNavbar({
   sessionId,
   paneId,
@@ -117,79 +190,53 @@ function FullNavbar({
     messages?.some((m) => m.streaming && m.planning) ?? false;
   const { state, actions } = useWorkspace();
   const isWs = state.isWorkspaceView;
+  const moveDir = getMoveDirection(state.root, paneId);
   const [showEditTitle, setShowEditTitle] = useState(false);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
 
+  const dynamicBg = isPlanning
+    ? "bg-warning/15"
+    : isStreaming
+      ? "bg-primary/15"
+      : "bg-base-200";
+
+  const titleButton = (
+    <button
+      onClick={() => session && setShowEditTitle(true)}
+      className="text-sm font-medium px-1 text-left btn btn-ghost btn-sm h-auto min-h-0 py-1 max-w-full"
+    >
+      <span className="truncate">{session?.title ?? "Loading..."}</span>
+    </button>
+  );
+
+  const attachments = messages ? (
+    <AttachmentsPopover
+      messages={messages}
+      scrollContainer={messagesContainerRef}
+    />
+  ) : null;
+
   return (
     <>
-      <div
-        className={`navbar shrink-0 gap-1 min-h-0 py-0.5 px-2 ${!isWs ? "pt-[calc(env(safe-area-inset-top)-16px)]" : ""} transition-colors duration-300 ${
-          isPlanning
-            ? "bg-warning/15"
-            : isStreaming
-              ? "bg-primary/15"
-              : "bg-base-200"
-        }`}
-      >
-        <div className="flex-none flex items-center gap-0.5">
-          {!isWs && (
-            <label
-              htmlFor="session-drawer"
-              className="btn btn-ghost btn-sm btn-square"
-            >
-              <List size={18} weight="bold" />
-            </label>
-          )}
-          <div className="dropdown">
-            <button
-              tabIndex={0}
-              className="btn btn-ghost btn-sm btn-square"
-              aria-label="Pane menu"
-            >
-              <Columns size={16} weight="bold" />
-            </button>
-            <ul
-              tabIndex={0}
-              className="dropdown-content z-10 menu bg-base-200 rounded-box shadow-lg w-44 p-2 mt-1"
-            >
-              <li>
-                <button onClick={() => actions.splitPane(paneId, "horizontal")}>
-                  <Columns size={16} weight="duotone" />
-                  Split Right
-                </button>
-              </li>
-              <li>
-                <button onClick={() => actions.splitPane(paneId, "vertical")}>
-                  <Rows size={16} weight="duotone" />
-                  Split Down
-                </button>
-              </li>
-              <li>
-                <button onClick={() => actions.closePane(paneId)}>
-                  <X size={16} weight="bold" />
-                  Close Pane
-                </button>
-              </li>
-            </ul>
-          </div>
-        </div>
-        <div className="flex-1 min-w-0">
-          <button
-            onClick={() => session && setShowEditTitle(true)}
-            className="text-sm font-medium px-1 text-left btn btn-ghost btn-sm h-auto min-h-0 py-1 max-w-full"
-          >
-            <span className="truncate">{session?.title ?? "Loading..."}</span>
-          </button>
-        </div>
-        {messages && (
+      {isWs ? (
+        <div
+          className={`navbar shrink-0 gap-1 min-h-0 py-0.5 px-2 transition-colors duration-300 ${dynamicBg}`}
+        >
           <div className="flex-none">
-            <AttachmentsPopover
-              messages={messages}
-              scrollContainer={messagesContainerRef}
-            />
+            <PaneMenu paneId={paneId} actions={actions} moveDir={moveDir} />
           </div>
-        )}
-      </div>
+          <div className="flex-1 min-w-0">{titleButton}</div>
+          {attachments && <div className="flex-none">{attachments}</div>}
+        </div>
+      ) : (
+        <TopBar
+          bg={dynamicBg}
+          className="transition-colors duration-300"
+          trailing={attachments}
+        >
+          {titleButton}
+        </TopBar>
+      )}
       {showEditTitle && session && (
         <EditTitleModal
           sessionId={sessionId}
@@ -227,6 +274,7 @@ function ChatPaneContent({
   const messages = useQuery(api.messages.list, { sessionId });
   const queuedMessages = useQuery(api.queuedMessages.list, { sessionId });
   const sendMessage = useMutation(api.messages.send);
+  const removeLastExchange = useMutation(api.messages.removeLastExchange);
   const addToQueue = useMutation(api.queuedMessages.add);
   const removeFromQueue = useMutation(api.queuedMessages.remove);
   const updateQueued = useMutation(api.queuedMessages.update);
@@ -424,6 +472,24 @@ function ChatPaneContent({
       console.error("Failed to cancel:", error);
     } finally {
       setIsCancelling(false);
+      setIsLoading(false);
+    }
+  };
+
+  const handleEditLastMessage = async () => {
+    // Cancel any active stream first
+    await fetch("/api/chat/cancel", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId }),
+    });
+    setIsLoading(false);
+
+    // Remove the last user message + assistant response, get content back
+    const result = await removeLastExchange({ sessionId });
+    if (result) {
+      setInput(result.content === "(image)" ? "" : result.content);
+      textareaRef.current?.focus();
     }
   };
 
@@ -447,6 +513,9 @@ function ChatPaneContent({
           </p>
         )}
         {messages?.map((message, idx) => {
+          const isLastUserMessage =
+            message.role === "user" &&
+            !messages.slice(idx + 1).some((m) => m.role === "user");
           const isError =
             message.error ||
             (message.role === "assistant" &&
@@ -532,8 +601,19 @@ function ChatPaneContent({
                       )}
                     </div>
                     <div
-                      className={`flex items-center gap-4 mt-1 ${message.role === "user" ? "justify-end" : "justify-between"}`}
+                      className="flex items-center gap-4 mt-1 justify-between"
                     >
+                      {isLastUserMessage && (isStreaming || isLoading) ? (
+                        <button
+                          onClick={handleEditLastMessage}
+                          className="btn btn-ghost btn-xs btn-circle opacity-40 active:opacity-100 transition-opacity"
+                          aria-label="Edit message"
+                        >
+                          <PencilSimple size={12} weight="bold" />
+                        </button>
+                      ) : message.role === "assistant" ? null : (
+                        <span />
+                      )}
                       <span className="text-[10px] opacity-30">
                         {formatTime(message.createdAt)}
                       </span>

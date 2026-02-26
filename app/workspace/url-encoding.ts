@@ -15,8 +15,23 @@ function genId(): string {
  * Example: v50(abc123,def456) = vertical split at 50%
  * Nested:  v50(h60(abc,def),ghi)
  */
+function toBase64Url(str: string): string {
+  return btoa(unescape(encodeURIComponent(str)))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
+function fromBase64Url(encoded: string): string {
+  const pad = (4 - (encoded.length % 4)) % 4;
+  const padded =
+    encoded.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat(pad);
+  return decodeURIComponent(escape(atob(padded)));
+}
+
 export function serializeTree(node: PaneNode): string {
   if (node.type === "leaf") {
+    if (node.iframeUrl) return "@" + toBase64Url(node.iframeUrl);
     return node.sessionId ?? "_";
   }
   const d = node.direction === "horizontal" ? "h" : "v";
@@ -31,6 +46,22 @@ export function deserializeTree(s: string): PaneNode {
   let pos = 0;
 
   function parse(): PaneNode {
+    // Check for iframe leaf: @<base64url>
+    if (s[pos] === "@") {
+      pos++; // skip @
+      let encoded = "";
+      while (pos < s.length && !"(),".includes(s[pos])) {
+        encoded += s[pos];
+        pos++;
+      }
+      return {
+        type: "leaf",
+        id: genId(),
+        sessionId: null,
+        iframeUrl: fromBase64Url(encoded),
+      } as PaneLeaf;
+    }
+
     // Check for split: [hv] followed by digits and then '('
     if (s[pos] === "h" || s[pos] === "v") {
       let lookahead = pos + 1;

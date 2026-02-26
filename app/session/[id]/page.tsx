@@ -9,18 +9,11 @@ import { SessionDrawer } from "@/app/components/session-drawer";
 import {
   WorkspaceProvider,
   useWorkspace,
+  firstLeaf,
 } from "@/app/workspace/workspace-context";
 import { PaneTree } from "@/app/workspace/pane-tree";
 import { serializeTree } from "@/app/workspace/url-encoding";
-
-function WorkspaceContent() {
-  const { state } = useWorkspace();
-  return (
-    <div className="h-[100dvh] w-full overflow-hidden">
-      <PaneTree node={state.root} />
-    </div>
-  );
-}
+import { randomWorkspaceName } from "@/lib/random-name";
 
 function SessionPageInner({ sessionId }: { sessionId: Id<"sessions"> }) {
   const router = useRouter();
@@ -36,23 +29,29 @@ function SessionPageInner({ sessionId }: { sessionId: Id<"sessions"> }) {
     }
   }, [session, router]);
 
-  // When a split is created, persist as a workspace in DB and navigate to it
+  // When a split is created, persist as workspace and navigate to it
   useEffect(() => {
     if (state.root.type === "split" && !creatingRef.current) {
       creatingRef.current = true;
       const layout = serializeTree(state.root);
-      createWorkspace({ layout }).then((wsId) => {
+      createWorkspace({ name: randomWorkspaceName(), layout }).then((wsId) => {
         router.replace(`/workspace/${wsId}`);
       });
     }
   }, [state.root, createWorkspace, router]);
+
+  // Always render the first leaf — don't show splits locally,
+  // the workspace page handles that after navigation
+  const displayRoot = state.root.type === "leaf" ? state.root : firstLeaf(state.root);
 
   return (
     <SessionDrawer
       activeSessionId={sessionId}
       onAddToWorkspace={(id) => actions.addSessionPane(id)}
     >
-      <WorkspaceContent />
+      <div className="h-[100dvh] w-full overflow-hidden">
+        <PaneTree node={displayRoot} />
+      </div>
     </SessionDrawer>
   );
 }

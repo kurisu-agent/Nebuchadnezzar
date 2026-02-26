@@ -1,0 +1,70 @@
+const adjectives = [
+  "Brave",
+  "Calm",
+  "Clever",
+  "Cosmic",
+  "Crystal",
+  "Daring",
+  "Electric",
+  "Frosty",
+  "Golden",
+  "Hidden",
+  "Iron",
+  "Jade",
+  "Lucky",
+  "Misty",
+  "Neon",
+  "Noble",
+  "Phantom",
+  "Quick",
+  "Rogue",
+  "Shadow",
+  "Silent",
+  "Silver",
+  "Solar",
+  "Steady",
+  "Storm",
+  "Swift",
+  "Velvet",
+  "Vivid",
+  "Wild",
+  "Zinc",
+];
+
+const animals = [
+  "Badger",
+  "Cobra",
+  "Crane",
+  "Dragon",
+  "Eagle",
+  "Falcon",
+  "Fox",
+  "Hawk",
+  "Heron",
+  "Jaguar",
+  "Kestrel",
+  "Leopard",
+  "Lynx",
+  "Mantis",
+  "Orca",
+  "Osprey",
+  "Otter",
+  "Owl",
+  "Panther",
+  "Puma",
+  "Raven",
+  "Shark",
+  "Sparrow",
+  "Tiger",
+  "Viper",
+  "Wolf",
+  "Wren",
+];
+
+function pick<T>(arr: T[]): T {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+export function randomWorkspaceName(): string {
+  return `${pick(adjectives)} ${pick(animals)}`;
+}

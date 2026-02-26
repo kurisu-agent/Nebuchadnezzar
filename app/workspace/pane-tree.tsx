@@ -3,6 +3,7 @@
 import { PaneNode } from "./types";
 import { ResizeHandle } from "./resize-handle";
 import { ChatPane } from "./chat-pane";
+import { IframePane } from "./iframe-pane";
 import { useWorkspace } from "./workspace-context";
 
 /** Check if a subtree contains a leaf with the given ID */
@@ -14,8 +15,12 @@ function containsLeaf(node: PaneNode, leafId: string): boolean {
 export function PaneTree({ node }: { node: PaneNode }) {
   const { state } = useWorkspace();
   const inputPaneId = state.inputFocusedPaneId;
+  const transitionClass = state.isDragging ? "" : "transition-all duration-200";
 
   if (node.type === "leaf") {
+    if (node.iframeUrl) {
+      return <IframePane paneId={node.id} url={node.iframeUrl} />;
+    }
     return <ChatPane paneId={node.id} sessionId={node.sessionId} />;
   }
 
@@ -39,7 +44,7 @@ export function PaneTree({ node }: { node: PaneNode }) {
     >
       <div
         style={{ [dim]: `${firstSize}%` }}
-        className="min-w-0 min-h-0 overflow-hidden transition-all duration-200"
+        className={`min-w-0 min-h-0 overflow-hidden ${transitionClass}`}
       >
         <PaneTree node={node.first} />
       </div>
@@ -48,7 +53,7 @@ export function PaneTree({ node }: { node: PaneNode }) {
       )}
       <div
         style={{ [dim]: `${secondSize}%` }}
-        className="min-w-0 min-h-0 overflow-hidden transition-all duration-200"
+        className={`min-w-0 min-h-0 overflow-hidden ${transitionClass}`}
       >
         <PaneTree node={node.second} />
       </div>

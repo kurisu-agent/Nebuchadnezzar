@@ -1,18 +1,34 @@
 "use client";
 
+import { useState } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { Plus, X } from "@phosphor-icons/react";
+import { Plus, X, Globe } from "@phosphor-icons/react";
 import { useWorkspace } from "./workspace-context";
 
 export function SessionPicker({ paneId }: { paneId: string }) {
   const sessions = useQuery(api.sessions.list);
   const createSession = useMutation(api.sessions.create);
   const { actions } = useWorkspace();
+  const [urlInput, setUrlInput] = useState("");
 
   const handleCreate = async () => {
     const id = await createSession({ title: "New Session" });
     actions.setSessionForPane(paneId, id);
+  };
+
+  const handleOpenUrl = () => {
+    const trimmed = urlInput.trim();
+    if (!trimmed) return;
+    const url = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+    actions.setIframeForPane(paneId, url);
+  };
+
+  const handleUrlKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleOpenUrl();
+    }
   };
 
   return (
@@ -45,6 +61,29 @@ export function SessionPicker({ paneId }: { paneId: string }) {
             <span className="truncate">{s.title}</span>
           </button>
         ))}
+      </div>
+      <div className="shrink-0 border-t border-base-300/50 p-3">
+        <label className="text-xs opacity-40 uppercase tracking-wide flex items-center gap-1 mb-2">
+          <Globe size={12} weight="duotone" />
+          Embed URL
+        </label>
+        <div className="flex gap-2">
+          <input
+            type="url"
+            value={urlInput}
+            onChange={(e) => setUrlInput(e.target.value)}
+            onKeyDown={handleUrlKeyDown}
+            placeholder="https://example.com"
+            className="input input-bordered input-sm flex-1 min-w-0"
+          />
+          <button
+            onClick={handleOpenUrl}
+            disabled={!urlInput.trim()}
+            className="btn btn-primary btn-sm"
+          >
+            Open
+          </button>
+        </div>
       </div>
     </div>
   );
