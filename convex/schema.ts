@@ -29,6 +29,8 @@ export default defineSchema({
     createdAt: v.number(),
   }).index("by_session", ["sessionId", "createdAt"]),
   workspaces: defineTable({
+    name: v.string(),
+    customName: v.optional(v.boolean()),
     layout: v.string(),
     updatedAt: v.number(),
   }),

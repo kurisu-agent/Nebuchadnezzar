@@ -15,9 +15,10 @@ export const get = query({
 });
 
 export const create = mutation({
-  args: { layout: v.string() },
+  args: { name: v.string(), layout: v.string() },
   handler: async (ctx, args) => {
     return await ctx.db.insert("workspaces", {
+      name: args.name,
       layout: args.layout,
       updatedAt: Date.now(),
     });
@@ -30,6 +31,16 @@ export const save = mutation({
     await ctx.db.patch(args.id, {
       layout: args.layout,
       updatedAt: Date.now(),
+    });
+  },
+});
+
+export const updateName = mutation({
+  args: { id: v.id("workspaces"), name: v.string() },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.id, {
+      name: args.name,
+      customName: true,
     });
   },
 });

@@ -49,6 +49,20 @@ export const update = mutation({
   },
 });
 
+export const clearBySession = mutation({
+  args: { sessionId: v.id("sessions") },
+  handler: async (ctx, args) => {
+    const items = await ctx.db
+      .query("queuedMessages")
+      .withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
+      .collect();
+    for (const item of items) {
+      await ctx.db.delete(item._id);
+    }
+    return items.length;
+  },
+});
+
 export const shift = mutation({
   args: { sessionId: v.id("sessions") },
   handler: async (ctx, args) => {

@@ -62,6 +62,11 @@ export const updateContent = mutation({
     error: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
+    // Refuse to overwrite a message that was already cancelled — prevents
+    // in-flight flush mutations from resurrecting a cancelled message.
+    const existing = await ctx.db.get(args.messageId);
+    if (!existing || existing.cancelled) return;
+
     const patch: Record<string, unknown> = {
       content: args.content,
       streaming: args.streaming,
@@ -76,6 +81,43 @@ export const updateContent = mutation({
       patch.error = args.error;
     }
     await ctx.db.patch(args.messageId, patch);
+  },
+});
+
+/**
+ * Remove the last user message and any messages after it (assistant response).
+ * Returns the deleted user message's content and attachments so the UI can
+ * populate the input box for editing.
+ */
+export const removeLastExchange = mutation({
+  args: { sessionId: v.id("sessions") },
+  handler: async (ctx, args) => {
+    const messages = await ctx.db
+      .query("messages")
+      .withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
+      .collect();
+
+    // Find the last user message
+    let lastUserIdx = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === "user") {
+        lastUserIdx = i;
+        break;
+      }
+    }
+    if (lastUserIdx === -1) return null;
+
+    const userMsg = messages[lastUserIdx];
+
+    // Delete the user message and everything after it
+    for (let i = lastUserIdx; i < messages.length; i++) {
+      await ctx.db.delete(messages[i]._id);
+    }
+
+    return {
+      content: userMsg.content,
+      attachments: userMsg.attachments ?? null,
+    };
   },
 });
 
