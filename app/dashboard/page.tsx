@@ -11,6 +11,7 @@ import {
   GitCommit,
   Clock,
 } from "@phosphor-icons/react";
+import { ActionBanner } from "@/app/components/action-banner";
 
 export default function AboutPage() {
   const updateInfo = useQuery(api.updates.getLatest);
@@ -65,7 +66,7 @@ export default function AboutPage() {
       await sendMessage({
         sessionId,
         content:
-          "Pull the latest changes from the remote repository. Run: git pull origin master. After pulling, summarize what changed based on the new commits.",
+          "Pull the latest changes from master. After pulling, summarize what changed based on the new commits.",
       });
       fetch("/api/chat", {
         method: "POST",
@@ -83,26 +84,15 @@ export default function AboutPage() {
     <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-3">
       {/* Update Banner */}
       {hasUpdate && (
-        <div className="alert alert-info shadow-sm">
-          <DownloadSimple size={20} weight="duotone" />
-          <div className="flex-1 min-w-0">
-            <p className="font-semibold text-sm">Update Available</p>
-            <p className="text-xs opacity-70 truncate">
-              {updateInfo.remoteMessage}
-            </p>
-          </div>
-          <button
-            onClick={handleUpdate}
-            disabled={updating}
-            className="btn btn-sm btn-primary"
-          >
-            {updating ? (
-              <span className="loading loading-spinner loading-xs" />
-            ) : (
-              "Update"
-            )}
-          </button>
-        </div>
+        <ActionBanner
+          icon={DownloadSimple}
+          title="Update Available"
+          description={updateInfo.remoteMessage}
+          actionLabel="Update"
+          onAction={handleUpdate}
+          loading={updating}
+          variant="info"
+        />
       )}
 
       {/* App Info Card */}
