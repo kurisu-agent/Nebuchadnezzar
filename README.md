@@ -13,7 +13,9 @@
 
 ---
 
-A web UI for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) built with Next.js 15, Convex, and the Claude Agent SDK. Designed for single-user [Coder](https://coder.com/) environments — no authentication, no cloud services, everything runs locally.
+> **Warning:** This project does not include authentication. If you expose it beyond localhost, you must provide your own auth layer — for example via [Coder](https://coder.com/), [Authentik](https://goauthentik.io/), [Authelia](https://www.authelia.com/), or a reverse proxy with basic auth.
+
+A web UI for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) built with Next.js 15, Convex, and the Claude Agent SDK. No cloud services — everything runs locally.
 
 ## Features
 
@@ -103,8 +105,6 @@ npm run dev
 
 Then open [http://localhost:3000](http://localhost:3000).
 
-> **Coder users:** The app auto-detects proxy URLs. Access via your Coder port-forwarded URL (e.g. `https://<port>--<workspace>.<coder-host>/`).
-
 ## Scripts
 
 | Command | Description |
@@ -149,12 +149,7 @@ convex/
 
 ### Roadmap
 
-- Model selection
-- Token/cost tracking
-- Markdown syntax highlighting in code blocks
-- Multi-agent orchestration
-- Devcontainer support
-- Multi-account support (GitHub account namespacing — for users with multiple GitHub accounts)
+See [TODO.md](TODO.md) for the full list.
 
 ## Authentication and Claude Code Credentials
 
