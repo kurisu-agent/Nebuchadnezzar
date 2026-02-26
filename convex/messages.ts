@@ -12,15 +12,30 @@ export const list = query({
 });
 
 export const send = mutation({
-  args: { sessionId: v.id("sessions"), content: v.string() },
+  args: {
+    sessionId: v.id("sessions"),
+    content: v.string(),
+    attachments: v.optional(v.array(v.id("uploads"))),
+  },
   handler: async (ctx, args) => {
-    return await ctx.db.insert("messages", {
+    const doc: {
+      sessionId: typeof args.sessionId;
+      role: "user";
+      content: string;
+      streaming: boolean;
+      attachments?: typeof args.attachments;
+      createdAt: number;
+    } = {
       sessionId: args.sessionId,
       role: "user",
       content: args.content,
       streaming: false,
       createdAt: Date.now(),
-    });
+    };
+    if (args.attachments && args.attachments.length > 0) {
+      doc.attachments = args.attachments;
+    }
+    return await ctx.db.insert("messages", doc);
   },
 });
 

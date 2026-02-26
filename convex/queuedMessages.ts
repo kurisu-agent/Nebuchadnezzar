@@ -12,13 +12,26 @@ export const list = query({
 });
 
 export const add = mutation({
-  args: { sessionId: v.id("sessions"), content: v.string() },
+  args: {
+    sessionId: v.id("sessions"),
+    content: v.string(),
+    attachments: v.optional(v.array(v.id("uploads"))),
+  },
   handler: async (ctx, args) => {
-    return await ctx.db.insert("queuedMessages", {
+    const doc: {
+      sessionId: typeof args.sessionId;
+      content: string;
+      attachments?: typeof args.attachments;
+      createdAt: number;
+    } = {
       sessionId: args.sessionId,
       content: args.content,
       createdAt: Date.now(),
-    });
+    };
+    if (args.attachments && args.attachments.length > 0) {
+      doc.attachments = args.attachments;
+    }
+    return await ctx.db.insert("queuedMessages", doc);
   },
 });
 
@@ -45,6 +58,9 @@ export const shift = mutation({
       .first();
     if (!first) return null;
     await ctx.db.delete(first._id);
-    return first.content;
+    return {
+      content: first.content,
+      attachments: first.attachments ?? null,
+    };
   },
 });
