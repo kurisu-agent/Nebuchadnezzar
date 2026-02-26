@@ -6,6 +6,8 @@
 
 *Chat with Claude Code from your phone — real-time streaming, session management, and a built-in config editor.*
 
+*Built entirely from a phone using Claude Code — no laptop involved.*
+
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 [![Next.js 15](https://img.shields.io/badge/Next.js-15-black)](https://nextjs.org/)
 [![Convex](https://img.shields.io/badge/Convex-realtime-orange)](https://www.convex.dev/)

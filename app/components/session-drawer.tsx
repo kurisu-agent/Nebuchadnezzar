@@ -82,7 +82,7 @@ export function SessionDrawer({
           <div className="p-4 pb-3 flex items-center justify-between shrink-0">
             <span className="text-sm font-semibold opacity-70 flex items-center gap-1.5">
               <RocketLaunch size={16} weight="duotone" />
-              Neb
+              Nebuchadnezzar
             </span>
             <div className="flex items-center gap-1">
               <button
