@@ -2,9 +2,7 @@
 
 # Nebuchadnezzar
 
-**The Mobile AIDE**
-
-*A mobile-first AI development environment — dogfooded into existence from a phone, no laptop required.*
+*A mobile-first AI development environment — dogfooded into existence from a phone without touching a laptop.*
 
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 [![Next.js 15](https://img.shields.io/badge/Next.js-15-black)](https://nextjs.org/)
