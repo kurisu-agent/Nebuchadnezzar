@@ -34,6 +34,10 @@ export default defineSchema({
     layout: v.string(),
     updatedAt: v.number(),
   }),
+  pendingNavigations: defineTable({
+    targetUrl: v.string(),
+    createdAt: v.number(),
+  }),
   updateInfo: defineTable({
     remoteSha: v.string(),
     remoteMessage: v.string(),

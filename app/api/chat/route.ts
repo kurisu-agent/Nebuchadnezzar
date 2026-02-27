@@ -191,6 +191,8 @@ async function processChatStream(
   const env = { ...process.env };
   delete env.CLAUDECODE;
   delete env.CLAUDE_CODE_ENTRYPOINT;
+  // Expose session ID so the Nebuchadnezzar MCP server can use it
+  env.NEBUCHADNEZZAR_SESSION_ID = sessionId;
   sdkOptions.env = env;
 
   const controller = new AbortController();
@@ -350,7 +352,6 @@ async function processChatStream(
             fullContent = message.result;
           }
         }
-
       }
 
       if (controller.signal.aborted) {

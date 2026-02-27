@@ -136,6 +136,52 @@ cd /home/coder/Code/Nebuchadnezzar && npx tsx scripts/take-screenshot.ts "<URL>"
 
 Default device is `pixel-9` (412×923 @2.625x). The script outputs a `[screenshot:UPLOAD_ID]` marker. After taking a screenshot, include `[screenshot:UPLOAD_ID]` in your response so the UI displays it inline. **You MUST copy the `[screenshot:...]` line from the script output into your response verbatim.** Without it the user cannot see the screenshot.
 
+## MCP Server (Nebuchadnezzar Tools)
+
+An MCP server at `mcp/server.ts` gives Claude native tools for interacting with the Nebuchadnezzar UI. It's configured in `.mcp.json` and started automatically by the Agent SDK as a stdio subprocess.
+
+### Architecture
+
+```
+Agent SDK → reads .mcp.json → starts mcp/server.ts
+         → NEBUCHADNEZZAR_SESSION_ID env var passed to subprocess
+         → Claude calls MCP tools natively (no Bash/curl needed)
+         → MCP server talks to Convex directly via ConvexHttpClient
+         → For navigation: writes to pendingNavigations table
+         → NavigationWatcher component (in providers.tsx) auto-navigates
+```
+
+### Available Tools
+
+| Tool | Params | Effect |
+|------|--------|--------|
+| `open_iframe` | `url` | Opens a URL in an iframe pane above the current chat |
+
+### Adding New Tools
+
+Add a `server.tool()` call in `mcp/server.ts`:
+
+```typescript
+server.tool(
+  "tool_name",
+  "Description of what the tool does",
+  { param: z.string().describe("Param description") },
+  async ({ param }) => {
+    // Call Convex mutations, trigger navigation, etc.
+    return { content: [{ type: "text", text: "Done" }] };
+  },
+);
+```
+
+The tool is automatically discoverable by Claude — no CLAUDE.md changes needed. But do add it to the table above for developer reference.
+
+### Key Files
+
+- `mcp/server.ts` — MCP server with tool definitions
+- `.mcp.json` — MCP server configuration (read by Agent SDK)
+- `convex/pendingNavigations.ts` — Server→frontend navigation signals
+- `app/components/navigation-watcher.tsx` — Subscribes to navigation signals and auto-navigates
+
 ## Remember
 
 When the user says "remember X", add it to this file under the appropriate section (or this section if no other fits).

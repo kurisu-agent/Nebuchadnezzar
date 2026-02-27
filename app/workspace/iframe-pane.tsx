@@ -1,10 +1,12 @@
 "use client";
 
+import { useRef, useState, useCallback } from "react";
 import {
   Columns,
   Rows,
   X,
   Globe,
+  ArrowClockwise,
   ArrowLeft,
   ArrowRight,
   ArrowUp,
@@ -25,7 +27,34 @@ export function IframePane({ paneId, url }: { paneId: string; url: string }) {
   const { state, actions } = useWorkspace();
   const isFocused = state.focusedPaneId === paneId;
   const moveDir = getMoveDirection(state.root, paneId);
-  const title = extractTitle(url);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [currentUrl, setCurrentUrl] = useState(url);
+  const title = extractTitle(currentUrl);
+
+  const handleReload = useCallback(() => {
+    const iframe = iframeRef.current;
+    if (!iframe) return;
+    try {
+      iframe.contentWindow?.location.reload();
+    } catch {
+      // Cross-origin: reset src to force reload
+      iframe.src = currentUrl;
+    }
+  }, [currentUrl]);
+
+  const handleLoad = useCallback(() => {
+    const iframe = iframeRef.current;
+    if (!iframe) return;
+    try {
+      const newUrl = iframe.contentWindow?.location.href;
+      if (newUrl && newUrl !== "about:blank" && newUrl !== currentUrl) {
+        setCurrentUrl(newUrl);
+        actions.setIframeForPane(paneId, newUrl);
+      }
+    } catch {
+      // Cross-origin — can't read URL, keep the original
+    }
+  }, [currentUrl, paneId, actions]);
 
   return (
     <div
@@ -36,9 +65,19 @@ export function IframePane({ paneId, url }: { paneId: string; url: string }) {
     >
       <div className="shrink-0 flex items-center gap-1.5 px-2 h-8 bg-base-200/60">
         <Globe size={14} weight="duotone" className="opacity-40 shrink-0" />
-        <span className="text-sm truncate flex-1 opacity-60" title={url}>
+        <span className="text-sm truncate flex-1 opacity-60" title={currentUrl}>
           {title}
         </span>
+        <button
+          className="btn btn-ghost btn-xs btn-square opacity-30 hover:opacity-70"
+          aria-label="Reload"
+          onClick={(e) => {
+            e.stopPropagation();
+            handleReload();
+          }}
+        >
+          <ArrowClockwise size={14} weight="bold" />
+        </button>
         <div
           className="dropdown dropdown-end"
           onClick={(e) => e.stopPropagation()}
@@ -95,12 +134,14 @@ export function IframePane({ paneId, url }: { paneId: string; url: string }) {
       </div>
 
       <iframe
+        ref={iframeRef}
         src={url}
         title={title}
         className={`flex-1 w-full border-0 ${state.isDragging ? "pointer-events-none" : ""}`}
         sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
         allow="clipboard-read; clipboard-write"
         referrerPolicy="no-referrer"
+        onLoad={handleLoad}
       />
     </div>
   );

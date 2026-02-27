@@ -2,6 +2,7 @@
 
 import { ConvexProvider, ConvexReactClient } from "convex/react";
 import { ReactNode, useMemo } from "react";
+import { NavigationWatcher } from "./components/navigation-watcher";
 
 function getConvexUrl() {
   if (
@@ -15,5 +16,10 @@ function getConvexUrl() {
 
 export function ConvexClientProvider({ children }: { children: ReactNode }) {
   const convex = useMemo(() => new ConvexReactClient(getConvexUrl()), []);
-  return <ConvexProvider client={convex}>{children}</ConvexProvider>;
+  return (
+    <ConvexProvider client={convex}>
+      <NavigationWatcher />
+      {children}
+    </ConvexProvider>
+  );
 }
