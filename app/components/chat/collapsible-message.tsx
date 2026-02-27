@@ -4,10 +4,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { CaretDown, CaretUp } from "@phosphor-icons/react";
-import {
-  ScreenshotContent,
-  hasScreenshotMarkers,
-} from "./inline-screenshot";
+import { ScreenshotContent, hasScreenshotMarkers } from "./inline-screenshot";
 
 /**
  * Detects long assistant messages and renders them in a collapsible container.

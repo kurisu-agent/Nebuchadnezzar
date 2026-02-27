@@ -4,10 +4,7 @@ import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { animateText } from "./utils";
-import {
-  ScreenshotContent,
-  hasScreenshotMarkers,
-} from "./inline-screenshot";
+import { ScreenshotContent, hasScreenshotMarkers } from "./inline-screenshot";
 
 /**
  * Renders streaming markdown with word-level fade-in animation.
@@ -77,10 +74,7 @@ export function StreamingMarkdown({ content }: { content: string }) {
   if (containsScreenshots) {
     return (
       <div className="prose prose-sm prose-invert max-w-none">
-        <ScreenshotContent
-          content={content}
-          renderMarkdown={renderMarkdown}
-        />
+        <ScreenshotContent content={content} renderMarkdown={renderMarkdown} />
       </div>
     );
   }

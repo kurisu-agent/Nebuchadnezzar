@@ -30,9 +30,7 @@ function InlineScreenshot({ uploadId }: { uploadId: string }) {
 
   const upload = uploads?.[0];
   if (!upload?.url) {
-    return (
-      <span className="loading loading-spinner loading-xs opacity-30" />
-    );
+    return <span className="loading loading-spinner loading-xs opacity-30" />;
   }
 
   return (
@@ -83,9 +81,7 @@ export function ScreenshotContent({
         if (i % 2 === 0) {
           // Text segment — render as markdown
           const trimmed = part.trim();
-          return trimmed ? (
-            <div key={i}>{renderMarkdown(trimmed)}</div>
-          ) : null;
+          return trimmed ? <div key={i}>{renderMarkdown(trimmed)}</div> : null;
         }
         // Odd index = captured upload ID
         return <InlineScreenshot key={`ss-${i}-${part}`} uploadId={part} />;
