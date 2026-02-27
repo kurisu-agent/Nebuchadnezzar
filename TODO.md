@@ -11,3 +11,4 @@
 - [ ] Themes
 - [ ] Multi-window pane
 - [ ] Rethink message queue system — support injecting messages midstream
+- [ ] Audit codebase (in-memory screenshot registry, unused mutations, general cleanup)

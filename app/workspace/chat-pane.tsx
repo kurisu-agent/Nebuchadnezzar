@@ -44,8 +44,7 @@ function WorkspacePaneNavbar({
   const session = useQuery(api.sessions.get, { id: sessionId });
   const messages = useQuery(api.messages.list, { sessionId });
   const isStreaming = messages?.some((m) => m.streaming) ?? false;
-  const isPlanning =
-    messages?.some((m) => m.streaming && m.planning) ?? false;
+  const isPlanning = messages?.some((m) => m.streaming && m.planning) ?? false;
   const { state, actions } = useWorkspace();
   const moveDir = getMoveDirection(state.root, paneId);
 
@@ -73,7 +72,10 @@ function WorkspacePaneNavbar({
       <span className="text-sm truncate flex-1 opacity-60">
         {session?.title ?? "..."}
       </span>
-      <div className="dropdown dropdown-end" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="dropdown dropdown-end"
+        onClick={(e) => e.stopPropagation()}
+      >
         <button
           tabIndex={0}
           className="btn btn-ghost btn-xs px-0.5 opacity-30 hover:opacity-70"
@@ -87,7 +89,12 @@ function WorkspacePaneNavbar({
         >
           {moveDir && (
             <li>
-              <button onClick={() => { (document.activeElement as HTMLElement)?.blur(); actions.swapPane(paneId); }}>
+              <button
+                onClick={() => {
+                  (document.activeElement as HTMLElement)?.blur();
+                  actions.swapPane(paneId);
+                }}
+              >
                 {moveDir === "left" && <ArrowLeft size={16} weight="bold" />}
                 {moveDir === "right" && <ArrowRight size={16} weight="bold" />}
                 {moveDir === "up" && <ArrowUp size={16} weight="bold" />}
@@ -144,7 +151,12 @@ function PaneMenu({
       >
         {moveDir && (
           <li>
-            <button onClick={() => { (document.activeElement as HTMLElement)?.blur(); actions.swapPane(paneId); }}>
+            <button
+              onClick={() => {
+                (document.activeElement as HTMLElement)?.blur();
+                actions.swapPane(paneId);
+              }}
+            >
               {moveDir === "left" && <ArrowLeft size={16} weight="bold" />}
               {moveDir === "right" && <ArrowRight size={16} weight="bold" />}
               {moveDir === "up" && <ArrowUp size={16} weight="bold" />}
@@ -186,8 +198,7 @@ function FullNavbar({
   const session = useQuery(api.sessions.get, { id: sessionId });
   const messages = useQuery(api.messages.list, { sessionId });
   const isStreaming = messages?.some((m) => m.streaming) ?? false;
-  const isPlanning =
-    messages?.some((m) => m.streaming && m.planning) ?? false;
+  const isPlanning = messages?.some((m) => m.streaming && m.planning) ?? false;
   const { state, actions } = useWorkspace();
   const isWs = state.isWorkspaceView;
   const moveDir = getMoveDirection(state.root, paneId);
@@ -269,7 +280,14 @@ function ChatPaneContent({
     } else if (state.inputFocusedPaneId === paneId) {
       actions.setInputFocused(null);
     }
-  }, [textareaFocused, keyboardVisible, paneId, state.isWorkspaceView, state.inputFocusedPaneId, actions]);
+  }, [
+    textareaFocused,
+    keyboardVisible,
+    paneId,
+    state.isWorkspaceView,
+    state.inputFocusedPaneId,
+    actions,
+  ]);
 
   const messages = useQuery(api.messages.list, { sessionId });
   const queuedMessages = useQuery(api.queuedMessages.list, { sessionId });
@@ -306,8 +324,7 @@ function ChatPaneContent({
   const initialMessageIdsRef = useRef<Set<string> | null>(null);
 
   const isStreaming = messages?.some((m) => m.streaming) ?? false;
-  const isPlanning =
-    messages?.some((m) => m.streaming && m.planning) ?? false;
+  const isPlanning = messages?.some((m) => m.streaming && m.planning) ?? false;
 
   useEffect(() => {
     if (messages && !isStreaming) markSeen({ id: sessionId });
@@ -575,13 +592,11 @@ function ChatPaneContent({
                       message.role === "user" ? "chat-bubble-primary" : ""
                     } ${message.cancelled && message.content === "(cancelled)" ? "opacity-50" : ""}`}
                   >
-                    {message.role === "user" &&
-                      message.attachments &&
-                      message.attachments.length > 0 && (
-                        <MessageImages
-                          attachmentIds={message.attachments as Id<"uploads">[]}
-                        />
-                      )}
+                    {message.attachments && message.attachments.length > 0 && (
+                      <MessageImages
+                        attachmentIds={message.attachments as Id<"uploads">[]}
+                      />
+                    )}
                     <div className="text-sm leading-relaxed select-text">
                       {message.streaming ? (
                         <StreamingMarkdown content={message.content} />
@@ -600,9 +615,7 @@ function ChatPaneContent({
                         </div>
                       )}
                     </div>
-                    <div
-                      className="flex items-center gap-4 mt-1 justify-between"
-                    >
+                    <div className="flex items-center gap-4 mt-1 justify-between">
                       {isLastUserMessage && (isStreaming || isLoading) ? (
                         <button
                           onClick={handleEditLastMessage}

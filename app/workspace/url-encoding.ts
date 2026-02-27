@@ -70,8 +70,7 @@ export function deserializeTree(s: string): PaneNode {
       }
       if (lookahead > pos + 1 && s[lookahead] === "(") {
         // It's a split node
-        const direction =
-          s[pos] === "h" ? "horizontal" : ("vertical" as const);
+        const direction = s[pos] === "h" ? "horizontal" : ("vertical" as const);
         pos++; // skip h/v
 
         let ratioStr = "";

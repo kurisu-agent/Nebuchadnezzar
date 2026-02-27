@@ -42,7 +42,8 @@ function SessionPageInner({ sessionId }: { sessionId: Id<"sessions"> }) {
 
   // Always render the first leaf — don't show splits locally,
   // the workspace page handles that after navigation
-  const displayRoot = state.root.type === "leaf" ? state.root : firstLeaf(state.root);
+  const displayRoot =
+    state.root.type === "leaf" ? state.root : firstLeaf(state.root);
 
   return (
     <SessionDrawer

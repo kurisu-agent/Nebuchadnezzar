@@ -18,6 +18,7 @@ import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { activeStreams, cancelledSessions } from "./active-streams";
 import { generateTitle } from "./generate-title";
+import { consumeScreenshots } from "@/app/api/screenshot-uploads";
 import { after } from "next/server";
 
 const convex = new ConvexHttpClient(
@@ -278,6 +279,7 @@ async function processChatStream(
         messageId,
       });
 
+      const processingStartTime = Date.now();
       let fullContent = "";
       let lastFlushTime = 0;
       let sdkSessionId: string | undefined;
@@ -348,6 +350,7 @@ async function processChatStream(
             fullContent = message.result;
           }
         }
+
       }
 
       if (controller.signal.aborted) {
@@ -357,9 +360,20 @@ async function processChatStream(
 
       await pendingFlush;
 
+      // Check for screenshots uploaded during this turn via in-memory tracker.
+      // If Claude didn't include [screenshot:ID] markers, inject them so the
+      // UI's inline screenshot renderer can display them.
+      let finalContent = fullContent || "(no response)";
+      const trackedIds = consumeScreenshots(processingStartTime);
+      for (const id of trackedIds) {
+        if (!finalContent.includes(`[screenshot:${id}]`)) {
+          finalContent += `\n\n[screenshot:${id}]`;
+        }
+      }
+
       await convex.mutation(api.messages.updateContent, {
         messageId,
-        content: fullContent || "(no response)",
+        content: finalContent,
         streaming: false,
         steps: steps.length > 0 ? steps : undefined,
       });

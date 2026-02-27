@@ -56,9 +56,16 @@ export function IframePane({ paneId, url }: { paneId: string; url: string }) {
           >
             {moveDir && (
               <li>
-                <button onClick={() => { (document.activeElement as HTMLElement)?.blur(); actions.swapPane(paneId); }}>
+                <button
+                  onClick={() => {
+                    (document.activeElement as HTMLElement)?.blur();
+                    actions.swapPane(paneId);
+                  }}
+                >
                   {moveDir === "left" && <ArrowLeft size={16} weight="bold" />}
-                  {moveDir === "right" && <ArrowRight size={16} weight="bold" />}
+                  {moveDir === "right" && (
+                    <ArrowRight size={16} weight="bold" />
+                  )}
                   {moveDir === "up" && <ArrowUp size={16} weight="bold" />}
                   {moveDir === "down" && <ArrowDown size={16} weight="bold" />}
                   Move {moveDir.charAt(0).toUpperCase() + moveDir.slice(1)}
@@ -66,9 +73,7 @@ export function IframePane({ paneId, url }: { paneId: string; url: string }) {
               </li>
             )}
             <li>
-              <button
-                onClick={() => actions.splitPane(paneId, "horizontal")}
-              >
+              <button onClick={() => actions.splitPane(paneId, "horizontal")}>
                 <Columns size={16} weight="duotone" />
                 Split Right
               </button>

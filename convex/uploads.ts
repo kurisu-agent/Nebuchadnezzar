@@ -16,6 +16,14 @@ export const saveUpload = mutation({
     mimeType: v.string(),
     size: v.number(),
     sessionId: v.optional(v.id("sessions")),
+    source: v.optional(v.union(v.literal("user"), v.literal("screenshot"))),
+    metadata: v.optional(
+      v.object({
+        url: v.optional(v.string()),
+        device: v.optional(v.string()),
+        fullPage: v.optional(v.boolean()),
+      }),
+    ),
   },
   handler: async (ctx, args) => {
     return await ctx.db.insert("uploads", {
@@ -25,6 +33,8 @@ export const saveUpload = mutation({
       mimeType: args.mimeType,
       size: args.size,
       sessionId: args.sessionId,
+      source: args.source,
+      metadata: args.metadata,
       createdAt: Date.now(),
     });
   },
@@ -35,6 +45,26 @@ export const list = query({
     const uploads = await ctx.db
       .query("uploads")
       .withIndex("by_created")
+      .order("desc")
+      .collect();
+    return Promise.all(
+      uploads.map(async (upload) => ({
+        ...upload,
+        url: await ctx.storage.getUrl(upload.storageId),
+        thumbnailUrl: upload.thumbnailStorageId
+          ? await ctx.storage.getUrl(upload.thumbnailStorageId)
+          : null,
+      })),
+    );
+  },
+});
+
+export const listBySource = query({
+  args: { source: v.union(v.literal("user"), v.literal("screenshot")) },
+  handler: async (ctx, args) => {
+    const uploads = await ctx.db
+      .query("uploads")
+      .withIndex("by_source", (q) => q.eq("source", args.source))
       .order("desc")
       .collect();
     return Promise.all(

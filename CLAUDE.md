@@ -126,6 +126,16 @@ Use these class names instead of building from raw Tailwind. Refer to [daisyui.c
 - `.mask` — Shape masks (`mask-circle`, `mask-squircle`, `mask-hexagon`)
 - `.stack` — Stacked elements
 
+## Screenshots
+
+Take screenshots of web pages using the Playwright screenshot script:
+
+```bash
+cd /home/coder/Code/Nebuchadnezzar && npx tsx scripts/take-screenshot.ts "<URL>" [--device pixel-9|pixel-7|iphone-14|iphone-15|ipad-pro|desktop] [--full-page] [--wait <ms>]
+```
+
+Default device is `pixel-9` (412×923 @2.625x). The script outputs a `[screenshot:UPLOAD_ID]` marker. After taking a screenshot, include `[screenshot:UPLOAD_ID]` in your response so the UI displays it inline. **You MUST copy the `[screenshot:...]` line from the script output into your response verbatim.** Without it the user cannot see the screenshot.
+
 ## Remember
 
 When the user says "remember X", add it to this file under the appropriate section (or this section if no other fits).

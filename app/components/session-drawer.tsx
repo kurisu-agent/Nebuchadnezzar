@@ -89,7 +89,11 @@ export function SessionDrawer({
     const allIds = new Set<Id<"sessions">>();
     const groupMap = new Map<
       Id<"workspaces">,
-      { workspaceId: Id<"workspaces">; name: string; sessionIds: Set<Id<"sessions">> }
+      {
+        workspaceId: Id<"workspaces">;
+        name: string;
+        sessionIds: Set<Id<"sessions">>;
+      }
     >();
 
     if (workspaces) {
@@ -97,7 +101,11 @@ export function SessionDrawer({
         const ids = extractSessionIds(ws.layout);
         const idSet = new Set(ids);
         for (const id of ids) allIds.add(id);
-        groupMap.set(ws._id, { workspaceId: ws._id, name: ws.name, sessionIds: idSet });
+        groupMap.set(ws._id, {
+          workspaceId: ws._id,
+          name: ws.name,
+          sessionIds: idSet,
+        });
       }
     }
     if (workspaceSessionIds) {
@@ -165,7 +173,11 @@ export function SessionDrawer({
       const needed = MIN_VISIBLE - items.length;
       const promoted = old.splice(0, needed); // old is already sorted by recency (from sessions.list)
       for (const s of promoted) {
-        items.push({ type: "session", session: s, lastActivity: s.lastActivity });
+        items.push({
+          type: "session",
+          session: s,
+          lastActivity: s.lastActivity,
+        });
       }
     }
 
@@ -205,9 +217,7 @@ export function SessionDrawer({
       onNavigate={() => handleNavigate(session._id)}
       onDelete={() => removeSession({ id: session._id })}
       onAddToWorkspace={
-        onAddToWorkspace
-          ? () => handleAddToWorkspace(session._id)
-          : undefined
+        onAddToWorkspace ? () => handleAddToWorkspace(session._id) : undefined
       }
     />
   );
@@ -279,9 +289,7 @@ export function SessionDrawer({
                             onNavigate={() =>
                               handleNavigateWorkspace(item.group.workspaceId)
                             }
-                            onDelete={() =>
-                              removeSession({ id: s._id })
-                            }
+                            onDelete={() => removeSession({ id: s._id })}
                           />
                         ))}
                       </ul>

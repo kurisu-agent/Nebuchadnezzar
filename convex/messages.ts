@@ -60,6 +60,7 @@ export const updateContent = mutation({
     planning: v.optional(v.boolean()),
     steps: v.optional(v.array(v.string())),
     error: v.optional(v.boolean()),
+    attachments: v.optional(v.array(v.id("uploads"))),
   },
   handler: async (ctx, args) => {
     // Refuse to overwrite a message that was already cancelled — prevents
@@ -80,7 +81,22 @@ export const updateContent = mutation({
     if (args.error !== undefined) {
       patch.error = args.error;
     }
+    if (args.attachments !== undefined) {
+      patch.attachments = args.attachments;
+    }
     await ctx.db.patch(args.messageId, patch);
+  },
+});
+
+export const setAttachments = mutation({
+  args: {
+    messageId: v.id("messages"),
+    attachments: v.array(v.id("uploads")),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db.get(args.messageId);
+    if (!existing) return;
+    await ctx.db.patch(args.messageId, { attachments: args.attachments });
   },
 });
 

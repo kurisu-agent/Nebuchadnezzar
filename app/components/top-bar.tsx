@@ -20,7 +20,9 @@ export function TopBar({
   const hasUnseen = useQuery(api.sessions.hasUnseen, {});
 
   return (
-    <div className={`navbar shrink-0 gap-0 p-0 border-b border-base-300 ${bg} ${className ?? ""}`}>
+    <div
+      className={`navbar shrink-0 gap-0 p-0 border-b border-base-300 ${bg} ${className ?? ""}`}
+    >
       <label
         htmlFor="session-drawer"
         className="shrink-0 aspect-square self-stretch flex items-center justify-center bg-base-300/60 active:bg-base-300 cursor-pointer"

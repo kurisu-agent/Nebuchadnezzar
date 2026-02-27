@@ -126,13 +126,25 @@ export function WorkspaceProvider({
   initialTree?: PaneNode;
   children: React.ReactNode;
 }) {
-  const [state, setState] = useState<Omit<WorkspaceState, "isWorkspaceView">>(() => {
-    if (initialTree) {
-      return { root: initialTree, focusedPaneId: firstLeaf(initialTree).id, inputFocusedPaneId: null, isDragging: false };
-    }
-    const leaf = makeLeaf(initialSessionId ?? null);
-    return { root: leaf, focusedPaneId: leaf.id, inputFocusedPaneId: null, isDragging: false };
-  });
+  const [state, setState] = useState<Omit<WorkspaceState, "isWorkspaceView">>(
+    () => {
+      if (initialTree) {
+        return {
+          root: initialTree,
+          focusedPaneId: firstLeaf(initialTree).id,
+          inputFocusedPaneId: null,
+          isDragging: false,
+        };
+      }
+      const leaf = makeLeaf(initialSessionId ?? null);
+      return {
+        root: leaf,
+        focusedPaneId: leaf.id,
+        inputFocusedPaneId: null,
+        isDragging: false,
+      };
+    },
+  );
 
   // Derive isWorkspaceView from tree structure
   const isWorkspaceView = state.root.type === "split";
@@ -209,19 +221,16 @@ export function WorkspaceProvider({
     [],
   );
 
-  const setIframeForPane = useCallback(
-    (paneId: string, url: string) => {
-      setState((prev) => ({
-        ...prev,
-        root: mapTree(prev.root, paneId, (node) => ({
-          ...node,
-          sessionId: null,
-          iframeUrl: url,
-        })),
-      }));
-    },
-    [],
-  );
+  const setIframeForPane = useCallback((paneId: string, url: string) => {
+    setState((prev) => ({
+      ...prev,
+      root: mapTree(prev.root, paneId, (node) => ({
+        ...node,
+        sessionId: null,
+        iframeUrl: url,
+      })),
+    }));
+  }, []);
 
   const swapPane = useCallback((paneId: string) => {
     setState((prev) => {
@@ -290,7 +299,9 @@ export function WorkspaceProvider({
 
   const setInputFocused = useCallback((paneId: string | null) => {
     setState((prev) =>
-      prev.inputFocusedPaneId === paneId ? prev : { ...prev, inputFocusedPaneId: paneId },
+      prev.inputFocusedPaneId === paneId
+        ? prev
+        : { ...prev, inputFocusedPaneId: paneId },
     );
   }, []);
 
@@ -334,7 +345,9 @@ export function WorkspaceProvider({
   );
 
   return (
-    <WorkspaceContext.Provider value={{ state: { ...state, isWorkspaceView }, actions }}>
+    <WorkspaceContext.Provider
+      value={{ state: { ...state, isWorkspaceView }, actions }}
+    >
       {children}
     </WorkspaceContext.Provider>
   );

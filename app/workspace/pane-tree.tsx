@@ -29,13 +29,21 @@ export function PaneTree({ node }: { node: PaneNode }) {
 
   // When a chat input is focused, expand the subtree containing it via CSS
   // (keep DOM structure intact so the textarea doesn't unmount/lose focus)
-  const firstHasFocus = inputPaneId ? containsLeaf(node.first, inputPaneId) : false;
-  const secondHasFocus = inputPaneId ? containsLeaf(node.second, inputPaneId) : false;
+  const firstHasFocus = inputPaneId
+    ? containsLeaf(node.first, inputPaneId)
+    : false;
+  const secondHasFocus = inputPaneId
+    ? containsLeaf(node.second, inputPaneId)
+    : false;
   const expandFirst = firstHasFocus && !secondHasFocus;
   const expandSecond = secondHasFocus && !firstHasFocus;
 
   const firstSize = expandFirst ? 100 : expandSecond ? 0 : node.ratio * 100;
-  const secondSize = expandSecond ? 100 : expandFirst ? 0 : (1 - node.ratio) * 100;
+  const secondSize = expandSecond
+    ? 100
+    : expandFirst
+      ? 0
+      : (1 - node.ratio) * 100;
   const hideHandle = expandFirst || expandSecond;
 
   return (

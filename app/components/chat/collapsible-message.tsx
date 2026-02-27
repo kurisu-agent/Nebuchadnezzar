@@ -1,9 +1,13 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { CaretDown, CaretUp } from "@phosphor-icons/react";
+import {
+  ScreenshotContent,
+  hasScreenshotMarkers,
+} from "./inline-screenshot";
 
 /**
  * Detects long assistant messages and renders them in a collapsible container.
@@ -28,6 +32,14 @@ export function CollapsibleMessage({
   }, [content]);
 
   const shouldCollapse = isOverflowing && !skipCollapse;
+  const containsScreenshots = hasScreenshotMarkers(content);
+
+  const renderMarkdown = useCallback(
+    (text: string) => (
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
+    ),
+    [],
+  );
 
   return (
     <div className="relative">
@@ -45,7 +57,14 @@ export function CollapsibleMessage({
             : undefined
         }
       >
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+        {containsScreenshots ? (
+          <ScreenshotContent
+            content={content}
+            renderMarkdown={renderMarkdown}
+          />
+        ) : (
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+        )}
       </div>
       {shouldCollapse && (
         <button

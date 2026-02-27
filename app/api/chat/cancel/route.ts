@@ -24,10 +24,9 @@ export async function POST(req: Request) {
   const stream = activeStreams.get(sessionId);
   if (!stream) {
     // No active stream — clean up any orphaned streaming messages in DB.
-    const count = await convex.mutation(
-      api.messages.cancelStreamingBySession,
-      { sessionId },
-    );
+    const count = await convex.mutation(api.messages.cancelStreamingBySession, {
+      sessionId,
+    });
     return Response.json({ ok: true, alreadyDone: true, cleaned: count });
   }
 

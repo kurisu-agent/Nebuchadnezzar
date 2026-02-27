@@ -48,8 +48,17 @@ export default defineSchema({
     mimeType: v.string(),
     size: v.number(),
     sessionId: v.optional(v.id("sessions")),
+    source: v.optional(v.union(v.literal("user"), v.literal("screenshot"))),
+    metadata: v.optional(
+      v.object({
+        url: v.optional(v.string()),
+        device: v.optional(v.string()),
+        fullPage: v.optional(v.boolean()),
+      }),
+    ),
     createdAt: v.number(),
   })
     .index("by_session", ["sessionId", "createdAt"])
-    .index("by_created", ["createdAt"]),
+    .index("by_created", ["createdAt"])
+    .index("by_source", ["source", "createdAt"]),
 });

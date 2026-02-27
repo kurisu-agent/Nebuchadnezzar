@@ -171,7 +171,11 @@ function WorkspaceReady({
 
   return (
     <WorkspaceProvider initialTree={initialTree}>
-      <WorkspaceInner workspaceId={workspaceId} name={name} onNavigatingAway={onNavigatingAway} />
+      <WorkspaceInner
+        workspaceId={workspaceId}
+        name={name}
+        onNavigatingAway={onNavigatingAway}
+      />
     </WorkspaceProvider>
   );
 }
@@ -206,7 +210,9 @@ export default function WorkspacePage() {
       workspaceId={workspaceId}
       name={workspace.name}
       layout={workspace.layout}
-      onNavigatingAway={() => { setNavigatingAway(true); }}
+      onNavigatingAway={() => {
+        setNavigatingAway(true);
+      }}
     />
   );
 }

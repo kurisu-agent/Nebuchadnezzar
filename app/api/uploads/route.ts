@@ -2,6 +2,7 @@ import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import sharp from "sharp";
+import { registerScreenshot } from "@/app/api/screenshot-uploads";
 
 const convex = new ConvexHttpClient(
   process.env.CONVEX_URL ?? process.env.NEXT_PUBLIC_CONVEX_URL!,
@@ -15,6 +16,8 @@ export async function POST(req: Request) {
   const formData = await req.formData();
   const file = formData.get("file") as File | null;
   const sessionId = formData.get("sessionId") as string | null;
+  const source = formData.get("source") as string | null;
+  const metadataRaw = formData.get("metadata") as string | null;
 
   if (!file) {
     return Response.json({ error: "No file provided" }, { status: 400 });
@@ -70,6 +73,7 @@ export async function POST(req: Request) {
   }
 
   // Save metadata
+  const metadata = metadataRaw ? JSON.parse(metadataRaw) : undefined;
   const uploadId = await convex.mutation(api.uploads.saveUpload, {
     storageId,
     thumbnailStorageId: thumbnailStorageId
@@ -79,7 +83,14 @@ export async function POST(req: Request) {
     mimeType: file.type,
     size: file.size,
     sessionId: sessionId ? (sessionId as Id<"sessions">) : undefined,
+    source: source === "screenshot" ? "screenshot" : "user",
+    metadata,
   });
+
+  // Track screenshot uploads so the chat route can attach them to messages
+  if (source === "screenshot") {
+    registerScreenshot(uploadId);
+  }
 
   return Response.json({ uploadId });
 }
