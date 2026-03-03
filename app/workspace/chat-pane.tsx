@@ -37,9 +37,13 @@ import { SessionPicker } from "./session-picker";
 function WorkspacePaneNavbar({
   sessionId,
   paneId,
+  projectColor,
+  projectName,
 }: {
   sessionId: Id<"sessions">;
   paneId: string;
+  projectColor?: string;
+  projectName?: string;
 }) {
   const session = useQuery(api.sessions.get, { id: sessionId });
   const messages = useQuery(api.messages.list, { sessionId });
@@ -48,15 +52,15 @@ function WorkspacePaneNavbar({
   const { state, actions } = useWorkspace();
   const moveDir = getMoveDirection(state.root, paneId);
 
+  const bgClass = isPlanning
+    ? "bg-warning/10"
+    : isStreaming
+      ? "bg-primary/10"
+      : "bg-base-200/60";
+
   return (
     <div
-      className={`shrink-0 flex items-center gap-1.5 px-2 h-8 transition-colors duration-300 ${
-        isPlanning
-          ? "bg-warning/10"
-          : isStreaming
-            ? "bg-primary/10"
-            : "bg-base-200/60"
-      }`}
+      className={`shrink-0 flex items-center gap-1.5 px-2 h-8 transition-colors duration-300 ${bgClass}`}
       onClick={() => actions.focusPane(paneId)}
     >
       {isStreaming && (
@@ -69,9 +73,19 @@ function WorkspacePaneNavbar({
           planning
         </span>
       )}
-      <span className="text-sm truncate flex-1 opacity-60">
-        {session?.title ?? "..."}
-      </span>
+      <div className="flex-1 min-w-0 flex items-center gap-1.5">
+        {projectName && (
+          <span
+            className="text-[10px] opacity-50 shrink-0"
+            style={{ color: projectColor }}
+          >
+            {projectName}
+          </span>
+        )}
+        <span className="text-sm truncate opacity-60">
+          {session?.title ?? "..."}
+        </span>
+      </div>
       <div
         className="dropdown dropdown-end"
         onClick={(e) => e.stopPropagation()}
@@ -191,9 +205,13 @@ function PaneMenu({
 function FullNavbar({
   sessionId,
   paneId,
+  projectColor,
+  projectName,
 }: {
   sessionId: Id<"sessions">;
   paneId: string;
+  projectColor?: string;
+  projectName?: string;
 }) {
   const session = useQuery(api.sessions.get, { id: sessionId });
   const messages = useQuery(api.messages.list, { sessionId });
@@ -211,13 +229,23 @@ function FullNavbar({
       ? "bg-primary/15"
       : "bg-base-200";
 
-  const titleButton = (
-    <button
-      onClick={() => session && setShowEditTitle(true)}
-      className="text-sm font-medium px-1 text-left btn btn-ghost btn-sm h-auto min-h-0 py-1 max-w-full"
-    >
-      <span className="truncate">{session?.title ?? "Loading..."}</span>
-    </button>
+  const titleContent = (
+    <div className="flex flex-col items-start max-w-full">
+      {projectName && (
+        <span
+          className="text-[10px] leading-tight opacity-60 px-1"
+          style={{ color: projectColor }}
+        >
+          {projectName}
+        </span>
+      )}
+      <button
+        onClick={() => session && setShowEditTitle(true)}
+        className="text-sm font-medium px-1 text-left btn btn-ghost btn-sm h-auto min-h-0 py-0.5 max-w-full"
+      >
+        <span className="truncate">{session?.title ?? "Loading..."}</span>
+      </button>
+    </div>
   );
 
   const attachments = messages ? (
@@ -236,7 +264,7 @@ function FullNavbar({
           <div className="flex-none">
             <PaneMenu paneId={paneId} actions={actions} moveDir={moveDir} />
           </div>
-          <div className="flex-1 min-w-0">{titleButton}</div>
+          <div className="flex-1 min-w-0">{titleContent}</div>
           {attachments && <div className="flex-none">{attachments}</div>}
         </div>
       ) : (
@@ -245,7 +273,7 @@ function FullNavbar({
           className="transition-colors duration-300"
           trailing={attachments}
         >
-          {titleButton}
+          {titleContent}
         </TopBar>
       )}
       {showEditTitle && session && (
@@ -289,6 +317,15 @@ function ChatPaneContent({
     actions,
   ]);
 
+  const sessionDoc = useQuery(api.sessions.get, { id: sessionId });
+  const project = useQuery(
+    api.projects.get,
+    sessionDoc?.projectId ? { id: sessionDoc.projectId } : "skip",
+  );
+  const projectColor =
+    project && !project.deletedAt ? project.color : undefined;
+  const projectName = project && !project.deletedAt ? project.name : undefined;
+
   const messages = useQuery(api.messages.list, { sessionId });
   const queuedMessages = useQuery(api.queuedMessages.list, { sessionId });
   const sendMessage = useMutation(api.messages.send);
@@ -325,6 +362,13 @@ function ChatPaneContent({
 
   const isStreaming = messages?.some((m) => m.streaming) ?? false;
   const isPlanning = messages?.some((m) => m.streaming && m.planning) ?? false;
+  const lastMessage = messages?.[messages.length - 1];
+  const hasPendingResponse =
+    !!lastMessage &&
+    lastMessage.role === "user" &&
+    !isStreaming &&
+    !isLoading &&
+    Date.now() - lastMessage.createdAt < 30_000;
 
   useEffect(() => {
     if (messages && !isStreaming) markSeen({ id: sessionId });
@@ -381,6 +425,12 @@ function ChatPaneContent({
 
   const handlePaste = useCallback(
     async (e: React.ClipboardEvent) => {
+      // Suppress Enter-to-send during paste so pasted newlines don't submit
+      isPasteRef.current = true;
+      requestAnimationFrame(() => {
+        isPasteRef.current = false;
+      });
+
       const items = e.clipboardData?.items;
       if (!items) return;
       for (const item of Array.from(items)) {
@@ -408,31 +458,89 @@ function ChatPaneContent({
     [upload],
   );
 
-  const handleSubmit = async (e?: React.FormEvent) => {
-    e?.preventDefault();
-    if (!input.trim() && pendingUploads.length === 0) return;
-
+  const prepareInput = (): {
+    content: string;
+    attachmentIds: Id<"uploads">[];
+  } | null => {
+    if (!input.trim() && pendingUploads.length === 0) return null;
     const content = input.trim() || "(image)";
     const attachmentIds = pendingUploads.map((u) => u.id);
     setInput("");
     clearPending();
-
     if (textareaRef.current) textareaRef.current.style.height = "auto";
+    return { content, attachmentIds };
+  };
 
-    if (isStreaming || isLoading) {
-      await addToQueue({
+  const handleSendDirect = async () => {
+    const prepared = prepareInput();
+    if (!prepared) return;
+
+    // If streaming, cancel the current response first
+    if (isStreaming) {
+      try {
+        await fetch("/api/chat/interrupt", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionId }),
+        });
+      } catch (err) {
+        console.error("Failed to interrupt:", err);
+      }
+    }
+
+    setIsLoading(true);
+    try {
+      await sendMessage({
         sessionId,
-        content,
-        attachments: attachmentIds.length > 0 ? attachmentIds : undefined,
+        content: prepared.content,
+        attachments:
+          prepared.attachmentIds.length > 0
+            ? prepared.attachmentIds
+            : undefined,
       });
+      await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId }),
+      });
+    } catch (err) {
+      console.error("Failed to send message:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleQueue = async () => {
+    const prepared = prepareInput();
+    if (!prepared) return;
+    await addToQueue({
+      sessionId,
+      content: prepared.content,
+      attachments:
+        prepared.attachmentIds.length > 0 ? prepared.attachmentIds : undefined,
+    });
+  };
+
+  const handleSubmit = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+
+    // During streaming: send directly (default behavior)
+    if (isStreaming || isLoading) {
+      await handleSendDirect();
       return;
     }
 
+    // Idle with queued messages: add to queue + drain
     if (queuedMessages && queuedMessages.length > 0) {
+      const prepared = prepareInput();
+      if (!prepared) return;
       await addToQueue({
         sessionId,
-        content,
-        attachments: attachmentIds.length > 0 ? attachmentIds : undefined,
+        content: prepared.content,
+        attachments:
+          prepared.attachmentIds.length > 0
+            ? prepared.attachmentIds
+            : undefined,
       });
       setIsLoading(true);
       try {
@@ -449,18 +557,10 @@ function ChatPaneContent({
       return;
     }
 
+    // Idle, no queue: send directly
     setIsLoading(true);
     try {
-      await sendMessage({
-        sessionId,
-        content,
-        attachments: attachmentIds.length > 0 ? attachmentIds : undefined,
-      });
-      await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId }),
-      });
+      await handleSendDirect();
     } catch (error) {
       console.error("Failed to send message:", error);
     } finally {
@@ -468,8 +568,10 @@ function ChatPaneContent({
     }
   };
 
+  const isPasteRef = useRef(false);
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (e.key === "Enter" && !e.shiftKey && !isPasteRef.current) {
       e.preventDefault();
       handleSubmit();
     }
@@ -515,12 +617,25 @@ function ChatPaneContent({
       className={`flex flex-col h-full w-full overflow-hidden ${
         isFocused ? "ring-1 ring-primary/30 bg-base-100" : "bg-base-200"
       }`}
+      style={
+        projectColor ? { backgroundColor: `${projectColor}10` } : undefined
+      }
       onClick={() => actions.focusPane(paneId)}
     >
       {state.isWorkspaceView ? (
-        <WorkspacePaneNavbar sessionId={sessionId} paneId={paneId} />
+        <WorkspacePaneNavbar
+          sessionId={sessionId}
+          paneId={paneId}
+          projectColor={projectColor}
+          projectName={projectName}
+        />
       ) : (
-        <FullNavbar sessionId={sessionId} paneId={paneId} />
+        <FullNavbar
+          sessionId={sessionId}
+          paneId={paneId}
+          projectColor={projectColor}
+          projectName={projectName}
+        />
       )}
 
       <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4">
@@ -549,6 +664,14 @@ function ChatPaneContent({
                     !m.streaming &&
                     m.content.startsWith("Error: ")),
               );
+          // Hide cancelled assistant bubbles that were interrupted by a direct send
+          const nextMsg = idx < messages.length - 1 ? messages[idx + 1] : null;
+          const isInterrupted =
+            message.cancelled &&
+            message.role === "assistant" &&
+            nextMsg?.role === "user";
+          if (isInterrupted) return null;
+
           const prevMsg = idx > 0 ? messages[idx - 1] : null;
           const curDate = new Date(message.createdAt);
           const prevDate = prevMsg ? new Date(prevMsg.createdAt) : null;
@@ -657,28 +780,30 @@ function ChatPaneContent({
             </React.Fragment>
           );
         })}
-        {isLoading && messages && !messages.some((m) => m.streaming) && (
-          <div className="chat chat-start chat-animate">
-            <div className="chat-bubble">
-              <div className="flex items-center gap-4 justify-between">
-                <span className="text-[10px] opacity-30">
-                  {formatTime(Date.now())}
-                </span>
-                <div className="flex items-center gap-2">
-                  <span className="loading loading-dots loading-xs opacity-50" />
-                  <button
-                    onClick={handleCancel}
-                    disabled={isCancelling}
-                    className="btn btn-ghost btn-xs btn-circle opacity-50 active:opacity-100 transition-opacity"
-                    aria-label="Stop response"
-                  >
-                    <X size={14} weight="bold" />
-                  </button>
+        {(isLoading || hasPendingResponse) &&
+          messages &&
+          !messages.some((m) => m.streaming) && (
+            <div className="chat chat-start chat-animate">
+              <div className="chat-bubble">
+                <div className="flex items-center gap-4 justify-between">
+                  <span className="text-[10px] opacity-30">
+                    {formatTime(Date.now())}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="loading loading-dots loading-xs opacity-50" />
+                    <button
+                      onClick={handleCancel}
+                      disabled={isCancelling}
+                      className="btn btn-ghost btn-xs btn-circle opacity-50 active:opacity-100 transition-opacity"
+                      aria-label="Stop response"
+                    >
+                      <X size={14} weight="bold" />
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
       </div>
 
       {/* Input section — only shown when focused */}
@@ -765,7 +890,7 @@ function ChatPaneContent({
                 onBlur={() => setTextareaFocused(false)}
                 placeholder={
                   isStreaming || isLoading
-                    ? "Type to queue..."
+                    ? "Type to send or queue..."
                     : "Message... (Enter to send)"
                 }
                 rows={1}
@@ -774,14 +899,20 @@ function ChatPaneContent({
               <button
                 type="submit"
                 disabled={!input.trim() && pendingUploads.length === 0}
-                className={`btn btn-sm btn-circle shrink-0 ${isStreaming || isLoading ? "btn-secondary" : "btn-primary"}`}
+                className="btn btn-sm btn-circle shrink-0 btn-primary"
               >
-                {isStreaming || isLoading ? (
-                  <Queue size={18} weight="bold" />
-                ) : (
-                  <PaperPlaneTilt size={18} weight="fill" />
-                )}
+                <PaperPlaneTilt size={18} weight="fill" />
               </button>
+              {(isStreaming || isLoading) && (
+                <button
+                  type="button"
+                  onClick={handleQueue}
+                  disabled={!input.trim() && pendingUploads.length === 0}
+                  className="btn btn-sm btn-circle shrink-0 btn-ghost opacity-50 active:opacity-100"
+                >
+                  <Queue size={18} weight="bold" />
+                </button>
+              )}
             </div>
           </form>
         </div>

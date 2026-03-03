@@ -16,7 +16,11 @@ type TextContentBlock = { type: "text"; text: string };
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
-import { activeStreams, cancelledSessions } from "./active-streams";
+import {
+  activeStreams,
+  cancelledSessions,
+  processingSessions,
+} from "./active-streams";
 import { generateTitle } from "./generate-title";
 import { consumeScreenshots } from "@/app/api/screenshot-uploads";
 import { after } from "next/server";
@@ -158,6 +162,17 @@ async function processChatStream(
   ]);
   if (!session) return { ok: false, error: "Session not found" };
 
+  // Resolve project path for cwd if session belongs to a project
+  let projectCwd: string | undefined;
+  if (session.projectId) {
+    const project = await convex.query(api.projects.get, {
+      id: session.projectId,
+    });
+    if (project && !project.deletedAt) {
+      projectCwd = project.path;
+    }
+  }
+
   const lastUserMessage = [...messages]
     .reverse()
     .find((m) => m.role === "user");
@@ -180,6 +195,7 @@ async function processChatStream(
     systemPrompt: { type: "preset", preset: "claude_code" },
     settingSources: ["project", "user", "local"],
     includePartialMessages: true,
+    ...(projectCwd ? { cwd: projectCwd } : {}),
   };
 
   // Resume existing session or start new one
@@ -469,7 +485,7 @@ export async function POST(req: Request) {
   cancelledSessions.delete(sessionId);
 
   // Reject if already processing this session
-  if (activeStreams.has(sessionId)) {
+  if (activeStreams.has(sessionId) || processingSessions.has(sessionId)) {
     return Response.json({ ok: true, alreadyProcessing: true });
   }
 
@@ -491,17 +507,38 @@ export async function POST(req: Request) {
 
   // Process in the background — the client gets real-time updates via Convex
   after(async () => {
+    processingSessions.add(sessionId);
     try {
       await processChatStream(sessionId);
     } catch (err) {
       console.error("[chat background error]", err);
     }
-    // Always drain queued messages, even if the stream errored
-    try {
-      await drainQueue(sessionId);
-    } catch (err) {
-      console.error("[drainQueue error]", err);
+
+    // Loop: drain queue, then check for direct messages sent during streaming
+    while (!cancelledSessions.has(sessionId)) {
+      // Drain queued messages
+      try {
+        await drainQueue(sessionId);
+      } catch (err) {
+        console.error("[drainQueue error]", err);
+      }
+
+      // Check for unprocessed direct messages (last message is user with no response)
+      if (cancelledSessions.has(sessionId)) break;
+      try {
+        const msgs = await convex.query(api.messages.list, { sessionId });
+        const last = msgs[msgs.length - 1];
+        if (!last || last.role !== "user") break;
+
+        const result = await processChatStream(sessionId);
+        if (result.cancelled || !result.ok) break;
+      } catch (err) {
+        console.error("[trailing message error]", err);
+        break;
+      }
     }
+
+    processingSessions.delete(sessionId);
   });
 
   return Response.json({ ok: true });

@@ -1,14 +1,16 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { useMutation } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { Id } from "@/convex/_generated/dataModel";
 import { useRouter } from "next/navigation";
 import {
   PaperPlaneTilt,
   RocketLaunch,
   ImageSquare,
   X,
+  FolderSimple,
 } from "@phosphor-icons/react";
 import { SessionDrawer } from "@/app/components/session-drawer";
 import { TopBar } from "@/app/components/top-bar";
@@ -19,6 +21,12 @@ export default function NewSessionPage() {
   const sendMessage = useMutation(api.messages.send);
   const assignSession = useMutation(api.uploads.assignSession);
   const router = useRouter();
+
+  const projects = useQuery(api.projects.list);
+  const [selectedProjectId, setSelectedProjectId] =
+    useState<Id<"projects"> | null>(null);
+  const [showProjectPicker, setShowProjectPicker] = useState(false);
+  const selectedProject = projects?.find((p) => p._id === selectedProjectId);
 
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
@@ -38,8 +46,16 @@ export default function NewSessionPage() {
     el.style.height = Math.min(el.scrollHeight, 200) + "px";
   };
 
+  const isPasteRef = useRef(false);
+
   const handlePaste = useCallback(
     async (e: React.ClipboardEvent) => {
+      // Suppress Enter-to-send during paste so pasted newlines don't submit
+      isPasteRef.current = true;
+      requestAnimationFrame(() => {
+        isPasteRef.current = false;
+      });
+
       const items = e.clipboardData?.items;
       if (!items) return;
       for (const item of Array.from(items)) {
@@ -77,7 +93,9 @@ export default function NewSessionPage() {
     clearPending();
 
     try {
-      const sessionId = await createSession({});
+      const sessionId = await createSession({
+        ...(selectedProjectId ? { projectId: selectedProjectId } : {}),
+      });
       if (attachmentIds.length > 0) {
         await assignSession({ uploadIds: attachmentIds, sessionId });
       }
@@ -99,7 +117,7 @@ export default function NewSessionPage() {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (e.key === "Enter" && !e.shiftKey && !isPasteRef.current) {
       e.preventDefault();
       handleSubmit();
     }
@@ -122,6 +140,70 @@ export default function NewSessionPage() {
         </div>
 
         <div className="shrink-0 border-t border-base-300">
+          {/* Project picker */}
+          {projects && projects.length > 0 && (
+            <div className="px-3 pt-2 relative">
+              <button
+                type="button"
+                onClick={() => setShowProjectPicker(!showProjectPicker)}
+                className="btn btn-ghost btn-xs gap-1.5 active:bg-base-300"
+              >
+                {selectedProject ? (
+                  <>
+                    <div
+                      className="w-2.5 h-2.5 rounded-full"
+                      style={{ backgroundColor: selectedProject.color }}
+                    />
+                    <span className="text-xs opacity-60">
+                      {selectedProject.name}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <FolderSimple
+                      size={14}
+                      weight="duotone"
+                      className="opacity-40"
+                    />
+                    <span className="text-xs opacity-40">No project</span>
+                  </>
+                )}
+              </button>
+              {showProjectPicker && (
+                <div className="absolute bottom-full left-3 mb-1 bg-base-200 rounded-lg border border-base-300 overflow-hidden shadow-lg z-10 w-56">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedProjectId(null);
+                      setShowProjectPicker(false);
+                    }}
+                    className="btn btn-ghost btn-sm w-full justify-start text-xs rounded-none"
+                  >
+                    No project
+                  </button>
+                  {projects.map((p) => (
+                    <button
+                      key={p._id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedProjectId(p._id);
+                        setShowProjectPicker(false);
+                      }}
+                      className={`btn btn-ghost btn-sm w-full justify-start gap-2 text-xs rounded-none ${
+                        selectedProjectId === p._id ? "bg-base-300" : ""
+                      }`}
+                    >
+                      <div
+                        className="w-2.5 h-2.5 rounded-full"
+                        style={{ backgroundColor: p.color }}
+                      />
+                      {p.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           <form onSubmit={handleSubmit} className="p-3">
             {isUploading && (
               <div className="flex items-center gap-2 pb-2 mb-1">

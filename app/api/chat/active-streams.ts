@@ -20,3 +20,9 @@ export const activeStreams = new Map<string, ActiveStream>();
  * are still honoured.
  */
 export const cancelledSessions = new Set<string>();
+
+/**
+ * Sessions currently being processed (streaming + drain + trailing-message loop).
+ * Prevents concurrent POST /api/chat requests from starting duplicate work.
+ */
+export const processingSessions = new Set<string>();
