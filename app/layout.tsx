@@ -2,6 +2,8 @@ import type { Metadata, Viewport } from "next";
 import { ConvexClientProvider } from "./providers";
 import "./globals.css";
 
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: "Nebuchadnezzar",
   description: "Claude Code UI",

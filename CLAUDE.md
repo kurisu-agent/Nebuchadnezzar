@@ -13,18 +13,63 @@ Claude Code UI — Next.js 15 + Convex + Claude Agent SDK.
 
 Runs on Coder. Ports are proxied as `https://<port>--<workspace>.<coder-host>/`.
 
-### Starting dev
+### Starting dev (systemd auto-start)
+
+Both servers are managed by **systemd user services** and start automatically on workspace boot (linger is enabled). You should almost never need to start them manually.
+
+```
+neb-convex.service  → Convex local backend on :3210
+neb-nextjs.service  → Next.js dev server on :3000 (starts after Convex)
+```
+
+Service files live in `~/.config/systemd/user/`.
 
 ```bash
-npm run dev          # Next.js on :3000
-npm run dev:convex   # Convex local backend on :3210 (anonymous mode)
+# Check if servers are running
+systemctl --user status neb-convex neb-nextjs
+
+# Or just check the ports
+ss -tlnp | grep -E '3000|3210'
+
+# Restart a service (e.g. after code changes that need a server restart)
+systemctl --user restart neb-convex    # restarts Convex
+systemctl --user restart neb-nextjs    # restarts Next.js
+
+# View logs
+journalctl --user -u neb-convex -f     # tail Convex logs
+journalctl --user -u neb-nextjs -f     # tail Next.js logs
+
+# If a service is crash-looping, reset it
+systemctl --user reset-failed neb-convex
+systemctl --user restart neb-convex
+```
+
+**Do NOT start servers manually with `npm run dev` or `npx convex dev`.** This conflicts with the systemd services and causes port fights / crash loops.
+
+#### Convex upgrade gotcha
+
+When the Convex npm package is newer than the local backend binary, `convex dev` prompts "Upgrade now?" and **fails in non-interactive terminals**. The `neb-convex.service` uses `--local --local-force-upgrade` (hidden flags) to auto-accept upgrades and transfer data via snapshot export/import.
+
+#### After updating systemd services
+
+```bash
+systemctl --user daemon-reload
+systemctl --user restart neb-convex neb-nextjs
 ```
 
 ### IMPORTANT: Dev server rules
 
-- **NEVER run `npm run build`** or `next build`. This is dev-only — we only use the dev server.
+- **Do NOT run `npm run build` unless the user explicitly asks.** Day-to-day development uses the dev server only. Production builds (`npm run deploy` on port 30003) are available as a stable backup but should only be triggered on request.
 - **Do NOT kill or restart the dev servers** unless they have actually crashed. They run in the background. If you get an Internal Server Error, check if the servers are still running first before restarting.
-- If you need to restart, kill the old process on the port first (`lsof -ti :3000 | xargs kill`), then start fresh.
+- If you need to restart, use `systemctl --user restart neb-nextjs` (or `neb-convex`).
+
+### Production build (port 30003)
+
+Run `npm run deploy` to build and start the production server on port 30003. This serves as a stable backup — if the dev server hits a frontend error, the prod build stays available with the same data.
+
+- Both dev (:3000) and prod (:30003) share the **same Convex backend** (:3210) and the same data.
+- **Schema caveat**: If you push a breaking Convex schema change via `convex dev`, the prod build may become stale. Rebuild with `npm run deploy` after schema changes. Keep schema changes additive when possible to avoid this.
+- To stop a running prod server: `lsof -ti :30003 | xargs kill`
 
 ### Env vars (.env.local)
 

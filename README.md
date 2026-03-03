@@ -105,12 +105,35 @@ npm run dev
 
 Then open [http://localhost:3000](http://localhost:3000).
 
+## Production Build
+
+You can build and run an optimized production version on port 30003. This is useful as a stable backup — if the dev server hits a frontend error, the production build stays available with the same sessions and data.
+
+```bash
+# Build and start in one command (port 30003)
+npm run deploy
+```
+
+Or separately:
+
+```bash
+npm run build        # Build the production bundle
+npm run start:prod   # Start the production server (port 30003)
+```
+
+The production server requires the Convex backend to be running (`npm run dev:convex`). Both the dev server (port 3000) and production server (port 30003) connect to the same Convex backend — they share the same database and sessions.
+
+> **Note:** After Convex schema changes, rebuild the production server (`npm run deploy`) to pick up the new schema. The dev server hot-reloads automatically, but the production bundle is static.
+
 ## Scripts
 
 | Command | Description |
 |---------|-------------|
 | `npm run dev` | Start Next.js dev server (Turbopack, port 3000) |
 | `npm run dev:convex` | Start Convex local backend (anonymous mode, port 3210) |
+| `npm run build` | Build optimized production bundle |
+| `npm run start:prod` | Start production server (port 30003) |
+| `npm run deploy` | Build + start production server (port 30003) |
 | `npm run lint` | Run ESLint |
 | `npm run format` | Format code with Prettier |
 | `npm run format:check` | Check formatting without changes |
