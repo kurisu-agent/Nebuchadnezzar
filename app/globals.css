@@ -60,6 +60,34 @@
   }
 }
 
+/* Hide native popover backdrop — we use a real DOM element instead */
+[popover]::backdrop {
+  background: transparent !important;
+}
+
+/* Drawer backdrop blur applied via inline style on session-drawer.tsx */
+
+/* Animated backdrop blur for dialog-based modals */
+dialog.modal {
+  backdrop-filter: blur(0px);
+  -webkit-backdrop-filter: blur(0px);
+  transition:
+    backdrop-filter 0.3s ease-out,
+    -webkit-backdrop-filter 0.3s ease-out,
+    visibility 0.3s allow-discrete,
+    background-color 0.3s ease-out,
+    opacity 0.1s ease-out;
+}
+dialog.modal[open] {
+  backdrop-filter: blur(4px) !important;
+  -webkit-backdrop-filter: blur(4px) !important;
+}
+
+/* Hide default daisyUI menu caret — we use custom icons */
+.menu-dropdown-toggle::after {
+  display: none !important;
+}
+
 /* Scrollbar styling for dark theme */
 ::-webkit-scrollbar {
   width: 6px;

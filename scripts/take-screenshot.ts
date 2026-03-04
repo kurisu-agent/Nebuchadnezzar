@@ -31,6 +31,13 @@ const DEVICE_MAP: Record<string, DeviceConfig> = {
   },
 };
 
+/** Convert external Coder proxy URLs to localhost (e.g. https://3000--ws.coder.dev/path → http://localhost:3000/path) */
+function toLocalhost(raw: string): string {
+  const match = raw.match(/^https?:\/\/(\d+)--[^/]+(\/.*)?$/);
+  if (match) return `http://localhost:${match[1]}${match[2] ?? ""}`;
+  return raw;
+}
+
 async function main() {
   const args = process.argv.slice(2);
   const url = args[0];
@@ -71,7 +78,8 @@ async function main() {
   const page = await context.newPage();
 
   try {
-    await page.goto(url, { waitUntil: "networkidle", timeout: 30000 });
+    const localUrl = toLocalhost(url);
+    await page.goto(localUrl, { waitUntil: "networkidle", timeout: 30000 });
     if (waitMs > 0) await page.waitForTimeout(waitMs);
 
     const screenshotBuffer = await page.screenshot({ fullPage, type: "png" });

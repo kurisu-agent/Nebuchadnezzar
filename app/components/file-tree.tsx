@@ -99,24 +99,18 @@ function TreeNodeItem({
     return (
       <li>
         <span
-          className={`menu-dropdown-toggle ${isOpen ? "menu-dropdown-show" : ""} active:bg-base-300`}
+          className={`menu-dropdown-toggle ${isOpen ? "menu-dropdown-show" : ""} active:bg-base-300 relative pl-6`}
           onClick={() => onToggleDir(node.path)}
         >
-          {isLoading ? (
-            <span className="loading loading-spinner loading-xs shrink-0" />
-          ) : isOpen ? (
-            <CaretDown
-              size={12}
-              weight="bold"
-              className="shrink-0 opacity-50"
-            />
-          ) : (
-            <CaretRight
-              size={12}
-              weight="bold"
-              className="shrink-0 opacity-50"
-            />
-          )}
+          <span className="absolute left-1 top-1/2 -translate-y-1/2">
+            {isLoading ? (
+              <span className="loading loading-spinner loading-xs" />
+            ) : isOpen ? (
+              <CaretDown size={12} weight="bold" className="opacity-50" />
+            ) : (
+              <CaretRight size={12} weight="bold" className="opacity-50" />
+            )}
+          </span>
           {isOpen ? (
             <FolderOpen
               size={16}
