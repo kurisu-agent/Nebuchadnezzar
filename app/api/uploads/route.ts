@@ -2,7 +2,6 @@ import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import sharp from "sharp";
-import { registerScreenshot } from "@/app/api/screenshot-uploads";
 
 const convex = new ConvexHttpClient(
   process.env.CONVEX_URL ?? process.env.NEXT_PUBLIC_CONVEX_URL!,
@@ -86,11 +85,6 @@ export async function POST(req: Request) {
     source: source === "screenshot" ? "screenshot" : "user",
     metadata,
   });
-
-  // Track screenshot uploads so the chat route can attach them to messages
-  if (source === "screenshot") {
-    registerScreenshot(uploadId);
-  }
 
   return Response.json({ uploadId });
 }

@@ -22,7 +22,6 @@ import {
   processingSessions,
 } from "./active-streams";
 import { generateTitle } from "./generate-title";
-import { consumeScreenshots } from "@/app/api/screenshot-uploads";
 import { after } from "next/server";
 
 const convex = new ConvexHttpClient(
@@ -189,6 +188,7 @@ async function processChatStream(
   });
 
   // Build SDK options — YOLO mode, uses OAuth creds from ~/.claude
+  const nebRoot = process.cwd();
   const sdkOptions: Parameters<typeof query>[0]["options"] = {
     permissionMode: "bypassPermissions",
     allowDangerouslySkipPermissions: true,
@@ -196,6 +196,14 @@ async function processChatStream(
     settingSources: ["project", "user", "local"],
     includePartialMessages: true,
     ...(projectCwd ? { cwd: projectCwd } : {}),
+    // Always inject the Nebuchadnezzar MCP server so it's available
+    // even when cwd is a different project directory
+    mcpServers: {
+      nebuchadnezzar: {
+        command: "npx",
+        args: ["tsx", `${nebRoot}/mcp/server.ts`],
+      },
+    },
   };
 
   // Resume existing session or start new one
@@ -297,12 +305,14 @@ async function processChatStream(
         messageId,
       });
 
-      const processingStartTime = Date.now();
       let fullContent = "";
       let lastFlushTime = 0;
       let sdkSessionId: string | undefined;
       const steps: string[] = [];
       let planning = false;
+      let wasPlan = false;
+      let planContent = "";
+      let lastInputTokens = 0;
       let pendingFlush: Promise<void> = Promise.resolve();
 
       function flushStreaming(content: string) {
@@ -351,14 +361,48 @@ async function processChatStream(
             fullContent = text;
             flushStreaming(fullContent);
           }
+          // Track input tokens from the latest API call (= current context size).
+          // input_tokens only counts non-cached tokens; add cache hits/misses
+          // for the true context size sent to the model.
+          const msgUsage = (
+            message.message as unknown as Record<string, unknown>
+          ).usage as
+            | {
+                input_tokens?: number;
+                cache_creation_input_tokens?: number;
+                cache_read_input_tokens?: number;
+              }
+            | undefined;
+          if (msgUsage) {
+            const total =
+              (msgUsage.input_tokens ?? 0) +
+              (msgUsage.cache_creation_input_tokens ?? 0) +
+              (msgUsage.cache_read_input_tokens ?? 0);
+            if (total > 0) lastInputTokens = total;
+          }
           const newSteps = extractSteps(message);
           steps.push(...newSteps);
-          // Detect plan mode transitions from tool use
+          // Detect plan mode transitions and capture plan file content
           for (const block of message.message.content) {
             if (block.type === "tool_use") {
-              const tb = block as { type: "tool_use"; name: string };
-              if (tb.name === "EnterPlanMode") planning = true;
+              const tb = block as {
+                type: "tool_use";
+                name: string;
+                input: Record<string, unknown>;
+              };
+              if (tb.name === "EnterPlanMode") {
+                planning = true;
+                wasPlan = true;
+              }
               if (tb.name === "ExitPlanMode") planning = false;
+              // Capture plan file content from Write calls during planning
+              if (
+                planning &&
+                tb.name === "Write" &&
+                typeof tb.input.content === "string"
+              ) {
+                planContent = tb.input.content;
+              }
             }
           }
         }
@@ -366,6 +410,29 @@ async function processChatStream(
         if (message.type === "result") {
           if (message.subtype === "success" && message.result && !fullContent) {
             fullContent = message.result;
+          }
+          // Extract context window size from model usage
+          const resultMsg = message as unknown as {
+            modelUsage?: Record<
+              string,
+              { contextWindow?: number; inputTokens?: number }
+            >;
+          };
+          if (resultMsg.modelUsage && lastInputTokens > 0) {
+            const models = Object.values(resultMsg.modelUsage);
+            const ctxWindow = models.find((m) => m.contextWindow)
+              ?.contextWindow;
+            if (ctxWindow) {
+              convex
+                .mutation(api.sessions.updateContextUsage, {
+                  id: sessionId,
+                  contextUsed: lastInputTokens,
+                  contextWindow: ctxWindow,
+                })
+                .catch((e) =>
+                  console.error("[context usage update error]", e),
+                );
+            }
           }
         }
       }
@@ -377,22 +444,14 @@ async function processChatStream(
 
       await pendingFlush;
 
-      // Check for screenshots uploaded during this turn via in-memory tracker.
-      // If Claude didn't include [screenshot:ID] markers, inject them so the
-      // UI's inline screenshot renderer can display them.
-      let finalContent = fullContent || "(no response)";
-      const trackedIds = consumeScreenshots(processingStartTime);
-      for (const id of trackedIds) {
-        if (!finalContent.includes(`[screenshot:${id}]`)) {
-          finalContent += `\n\n[screenshot:${id}]`;
-        }
-      }
 
       await convex.mutation(api.messages.updateContent, {
         messageId,
-        content: finalContent,
+        content: fullContent || "(no response)",
         streaming: false,
         steps: steps.length > 0 ? steps : undefined,
+        wasPlan: wasPlan || undefined,
+        planContent: planContent || undefined,
       });
 
       activeStreams.delete(sessionId);

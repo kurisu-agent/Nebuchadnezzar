@@ -58,6 +58,8 @@ export const updateContent = mutation({
     content: v.string(),
     streaming: v.boolean(),
     planning: v.optional(v.boolean()),
+    wasPlan: v.optional(v.boolean()),
+    planContent: v.optional(v.string()),
     steps: v.optional(v.array(v.string())),
     error: v.optional(v.boolean()),
     attachments: v.optional(v.array(v.id("uploads"))),
@@ -74,6 +76,12 @@ export const updateContent = mutation({
     };
     if (args.planning !== undefined) {
       patch.planning = args.planning;
+    }
+    if (args.wasPlan !== undefined) {
+      patch.wasPlan = args.wasPlan;
+    }
+    if (args.planContent !== undefined) {
+      patch.planContent = args.planContent;
     }
     if (args.steps !== undefined) {
       patch.steps = args.steps;

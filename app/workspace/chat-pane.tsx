@@ -4,6 +4,7 @@ import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import React, { useState, useRef, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -18,6 +19,7 @@ import {
   ArrowRight,
   ArrowUp,
   ArrowDown,
+  Terminal,
 } from "@phosphor-icons/react";
 import { useUpload } from "@/app/hooks/use-upload";
 import { TopBar } from "@/app/components/top-bar";
@@ -25,10 +27,17 @@ import { formatDateLabel, formatTime } from "@/app/components/chat/utils";
 import { StreamingMarkdown } from "@/app/components/chat/streaming-markdown";
 import { CollapsibleMessage } from "@/app/components/chat/collapsible-message";
 import { ErrorMessage } from "@/app/components/chat/error-message";
+import { PlanMessage } from "@/app/components/chat/plan-message";
 import { MessageImages } from "@/app/components/chat/message-images";
-import { AttachmentsPopover } from "@/app/components/chat/attachments-popover";
+import { MediaModal } from "@/app/components/chat/media-modal";
 import { QueuedMessageRow } from "@/app/components/chat/queued-message-row";
 import { EditTitleModal } from "@/app/session/[id]/edit-title-modal";
+import {
+  SlashCommandPicker,
+  type SlashCommandPickerHandle,
+} from "@/app/components/chat/slash-command-picker";
+import { filterCommands } from "@/lib/slash-commands";
+import { useRouter } from "next/navigation";
 import { useWorkspace, getMoveDirection } from "./workspace-context";
 import { useKeyboardVisible } from "./use-keyboard-visible";
 import { SessionPicker } from "./session-picker";
@@ -76,7 +85,7 @@ function WorkspacePaneNavbar({
       <div className="flex-1 min-w-0 flex items-center gap-1.5">
         {projectName && (
           <span
-            className="text-[10px] opacity-50 shrink-0"
+            className="text-[10px] shrink-0"
             style={{ color: projectColor }}
           >
             {projectName}
@@ -207,16 +216,19 @@ function FullNavbar({
   paneId,
   projectColor,
   projectName,
+  projectId,
 }: {
   sessionId: Id<"sessions">;
   paneId: string;
   projectColor?: string;
   projectName?: string;
+  projectId?: Id<"projects">;
 }) {
   const session = useQuery(api.sessions.get, { id: sessionId });
   const messages = useQuery(api.messages.list, { sessionId });
   const isStreaming = messages?.some((m) => m.streaming) ?? false;
   const isPlanning = messages?.some((m) => m.streaming && m.planning) ?? false;
+  const router = useRouter();
   const { state, actions } = useWorkspace();
   const isWs = state.isWorkspaceView;
   const moveDir = getMoveDirection(state.root, paneId);
@@ -230,30 +242,28 @@ function FullNavbar({
       : "bg-base-200";
 
   const titleContent = (
-    <div className="flex flex-col items-start max-w-full">
-      {projectName && (
-        <span
-          className="text-[10px] leading-tight opacity-60 px-1"
-          style={{ color: projectColor }}
-        >
-          {projectName}
-        </span>
-      )}
+    <div className="flex items-center justify-between gap-2 w-full min-w-0">
       <button
         onClick={() => session && setShowEditTitle(true)}
-        className="text-sm font-medium px-1 text-left btn btn-ghost btn-sm h-auto min-h-0 py-0.5 max-w-full"
+        className="text-sm font-medium px-1 py-0.5 text-left rounded min-w-0 truncate active:bg-base-300"
       >
-        <span className="truncate">{session?.title ?? "Loading..."}</span>
+        {session?.title ?? "Loading..."}
       </button>
+      {projectName && (
+        <button
+          onClick={() => projectId && router.push(`/project/${projectId}/sessions`)}
+          className="btn btn-ghost btn-xs h-auto min-h-0 py-0.5 px-1.5 shrink-0 max-w-[40%] overflow-hidden active:bg-base-300"
+        >
+          <span
+            className="text-[10px] truncate"
+            style={{ color: projectColor }}
+          >
+            {projectName}
+          </span>
+        </button>
+      )}
     </div>
   );
-
-  const attachments = messages ? (
-    <AttachmentsPopover
-      messages={messages}
-      scrollContainer={messagesContainerRef}
-    />
-  ) : null;
 
   return (
     <>
@@ -265,13 +275,11 @@ function FullNavbar({
             <PaneMenu paneId={paneId} actions={actions} moveDir={moveDir} />
           </div>
           <div className="flex-1 min-w-0">{titleContent}</div>
-          {attachments && <div className="flex-none">{attachments}</div>}
         </div>
       ) : (
         <TopBar
           bg={dynamicBg}
           className="transition-colors duration-300"
-          trailing={attachments}
         >
           {titleContent}
         </TopBar>
@@ -334,6 +342,7 @@ function ChatPaneContent({
   const removeFromQueue = useMutation(api.queuedMessages.remove);
   const updateQueued = useMutation(api.queuedMessages.update);
   const markSeen = useMutation(api.sessions.markSeen);
+  const forkSession = useMutation(api.sessions.fork);
   const { upload, pendingUploads, isUploading, removePending, clearPending } =
     useUpload(sessionId);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -355,6 +364,11 @@ function ChatPaneContent({
   }, [input, draftKey]);
 
   const [isLoading, setIsLoading] = useState(false);
+  const [showMediaModal, setShowMediaModal] = useState(false);
+  const [showCommandPicker, setShowCommandPicker] = useState(false);
+  const [commandQuery, setCommandQuery] = useState("");
+  const [highlightedCommandIndex, setHighlightedCommandIndex] = useState(0);
+  const commandPickerRef = useRef<SlashCommandPickerHandle>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const witnessedStreamingRef = useRef<Set<string>>(new Set());
@@ -415,11 +429,27 @@ function ChatPaneContent({
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages]);
 
+  // Sync showCommandPicker state with native popover toggle events
+  useEffect(() => {
+    const el = document.getElementById(`cmd-picker-${sessionId}`);
+    if (!el) return;
+    const onToggle = (e: Event) => {
+      const { newState } = e as ToggleEvent;
+      setShowCommandPicker(newState === "open");
+    };
+    el.addEventListener("toggle", onToggle);
+    return () => el.removeEventListener("toggle", onToggle);
+  }, [sessionId]);
+
   const resizeTextarea = useCallback(() => {
     const textarea = textareaRef.current;
     if (textarea) {
       textarea.style.height = "auto";
-      textarea.style.height = Math.min(textarea.scrollHeight, 200) + "px";
+      const maxHeight = 200;
+      const scrollH = textarea.scrollHeight;
+      textarea.style.height = Math.min(scrollH, maxHeight) + "px";
+      // Show scrollbar only when content exceeds max height
+      textarea.style.overflowY = scrollH > maxHeight ? "auto" : "hidden";
     }
   }, []);
 
@@ -568,11 +598,60 @@ function ChatPaneContent({
     }
   };
 
+  const handleCommandSelect = async (command: string) => {
+    setShowCommandPicker(false);
+    commandPickerRef.current?.hide();
+
+    // Handle Nebuchadnezzar actions
+    if (command === "fork") {
+      const newId = await forkSession({ id: sessionId });
+      window.location.href = `/session/${newId}`;
+      return;
+    }
+    if (command === "media") {
+      setShowMediaModal(true);
+      return;
+    }
+
+    // Slash commands — insert into textarea
+    setInput(command + " ");
+    textareaRef.current?.focus();
+    requestAnimationFrame(resizeTextarea);
+  };
+
   const isPasteRef = useRef(false);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (showCommandPicker) {
+      const filtered = filterCommands(commandQuery);
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setHighlightedCommandIndex((i) => Math.min(i + 1, filtered.length - 1));
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setHighlightedCommandIndex((i) => Math.max(i - 1, 0));
+        return;
+      }
+      if (e.key === "Tab") {
+        e.preventDefault();
+        if (filtered[highlightedCommandIndex]) {
+          handleCommandSelect(filtered[highlightedCommandIndex].command);
+        }
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setShowCommandPicker(false);
+        commandPickerRef.current?.hide();
+        return;
+      }
+    }
     if (e.key === "Enter" && !e.shiftKey && !isPasteRef.current) {
       e.preventDefault();
+      setShowCommandPicker(false);
+      commandPickerRef.current?.hide();
       handleSubmit();
     }
   };
@@ -618,7 +697,7 @@ function ChatPaneContent({
         isFocused ? "ring-1 ring-primary/30 bg-base-100" : "bg-base-200"
       }`}
       style={
-        projectColor ? { backgroundColor: `${projectColor}10` } : undefined
+        projectColor ? { backgroundColor: `${projectColor}20` } : undefined
       }
       onClick={() => actions.focusPane(paneId)}
     >
@@ -635,6 +714,7 @@ function ChatPaneContent({
           paneId={paneId}
           projectColor={projectColor}
           projectName={projectName}
+          projectId={sessionDoc?.projectId}
         />
       )}
 
@@ -721,7 +801,12 @@ function ChatPaneContent({
                       />
                     )}
                     <div className="text-sm leading-relaxed select-text">
-                      {message.streaming ? (
+                      {message.wasPlan && !message.streaming ? (
+                        <PlanMessage
+                          content={message.content}
+                          planContent={message.planContent}
+                        />
+                      ) : message.streaming ? (
                         <StreamingMarkdown content={message.content} />
                       ) : message.role === "assistant" ? (
                         <CollapsibleMessage
@@ -808,7 +893,30 @@ function ChatPaneContent({
 
       {/* Input section — only shown when focused */}
       {isFocused && (
-        <div className="shrink-0 border-t border-base-300">
+        <div className="shrink-0">
+          {/* Context usage bar */}
+          <div className="h-[2px] w-full bg-base-300">
+            <div
+              className={`h-full transition-all duration-500 ease-out ${
+                sessionDoc?.contextUsed && sessionDoc?.contextWindow && sessionDoc.contextUsed / sessionDoc.contextWindow > 0.85
+                  ? "bg-error"
+                  : sessionDoc?.contextUsed && sessionDoc?.contextWindow && sessionDoc.contextUsed / sessionDoc.contextWindow > 0.65
+                    ? "bg-warning"
+                    : "bg-primary"
+              }`}
+              style={{
+                width: `${Math.max(2, sessionDoc?.contextUsed && sessionDoc?.contextWindow && sessionDoc.contextWindow > 0 ? Math.min(100, (sessionDoc.contextUsed / sessionDoc.contextWindow) * 100) : 0)}%`,
+              }}
+            />
+          </div>
+          <SlashCommandPicker
+            ref={commandPickerRef}
+            query={commandQuery}
+            onSelect={handleCommandSelect}
+            highlightedIndex={highlightedCommandIndex}
+            popoverId={`cmd-picker-${sessionId}`}
+            anchorName={`--cmd-btn-${sessionId}`}
+          />
           {queuedMessages && queuedMessages.length > 0 && (
             <div className="px-3 pt-2 flex flex-col gap-1">
               <span className="text-xs opacity-40 px-1 uppercase tracking-wide flex items-center gap-1">
@@ -869,6 +977,28 @@ function ChatPaneContent({
               >
                 <ImageSquare size={18} weight="duotone" />
               </button>
+              <button
+                type="button"
+                popoverTarget={`cmd-picker-${sessionId}`}
+                onClick={() => {
+                  setCommandQuery("");
+                  setHighlightedCommandIndex(0);
+                  textareaRef.current?.focus();
+                }}
+                className={`btn btn-sm btn-circle btn-ghost shrink-0 ${
+                  showCommandPicker
+                    ? "opacity-100 text-primary"
+                    : "opacity-50 active:opacity-100"
+                }`}
+                style={
+                  {
+                    anchorName: `--cmd-btn-${sessionId}`,
+                  } as React.CSSProperties
+                }
+                aria-label="Commands"
+              >
+                <Terminal size={18} weight="bold" />
+              </button>
               <input
                 ref={fileInputRef}
                 type="file"
@@ -881,8 +1011,20 @@ function ChatPaneContent({
                 ref={textareaRef}
                 value={input}
                 onChange={(e) => {
-                  setInput(e.target.value);
+                  const val = e.target.value;
+                  setInput(val);
                   resizeTextarea();
+                  if (val.startsWith("/") && !val.includes(" ")) {
+                    setCommandQuery(val);
+                    setHighlightedCommandIndex(0);
+                    if (!showCommandPicker) {
+                      setShowCommandPicker(true);
+                      commandPickerRef.current?.show();
+                    }
+                  } else if (showCommandPicker) {
+                    setShowCommandPicker(false);
+                    commandPickerRef.current?.hide();
+                  }
                 }}
                 onKeyDown={handleKeyDown}
                 onPaste={handlePaste}
@@ -891,10 +1033,10 @@ function ChatPaneContent({
                 placeholder={
                   isStreaming || isLoading
                     ? "Type to send or queue..."
-                    : "Message... (Enter to send)"
+                    : "Message... (⏎ send, ⇧⏎ newline)"
                 }
                 rows={1}
-                className="flex-1 text-sm resize-none bg-transparent border-none outline-none py-1.5 min-h-0 leading-snug placeholder:opacity-40"
+                className="flex-1 text-sm resize-none bg-transparent border-none outline-none py-1.5 min-h-0 leading-snug overflow-hidden placeholder:opacity-40"
               />
               <button
                 type="submit"
@@ -916,6 +1058,15 @@ function ChatPaneContent({
             </div>
           </form>
         </div>
+      )}
+      {/* Command picker backdrop removed — popover uses drop shadow instead */}
+      {messages && (
+        <MediaModal
+          open={showMediaModal}
+          onClose={() => setShowMediaModal(false)}
+          messages={messages}
+          scrollContainer={messagesContainerRef}
+        />
       )}
     </div>
   );
