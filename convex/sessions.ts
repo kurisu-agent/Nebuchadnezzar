@@ -54,6 +54,38 @@ export const hasUnseen = query({
   },
 });
 
+export const listByProject = query({
+  args: { projectId: v.id("projects") },
+  handler: async (ctx, args) => {
+    const sessions = await ctx.db.query("sessions").order("desc").collect();
+    const active = sessions.filter(
+      (s) => !s.deletedAt && s.projectId === args.projectId,
+    );
+    const enriched = await Promise.all(
+      active.map(async (session) => {
+        const latestMsg = await ctx.db
+          .query("messages")
+          .withIndex("by_session", (q) => q.eq("sessionId", session._id))
+          .order("desc")
+          .first();
+        const lastActivity = latestMsg?.createdAt ?? session.createdAt;
+        const hasUnseen =
+          latestMsg?.role === "assistant" &&
+          !latestMsg.streaming &&
+          latestMsg.createdAt > (session.lastSeenAt ?? session.createdAt);
+        return {
+          ...session,
+          lastActivity,
+          isStreaming: latestMsg?.streaming ?? false,
+          isPlanning: (latestMsg?.streaming && latestMsg?.planning) ?? false,
+          hasUnseen,
+        };
+      }),
+    );
+    return enriched.sort((a, b) => b.lastActivity - a.lastActivity);
+  },
+});
+
 export const listDeleted = query({
   handler: async (ctx) => {
     const sessions = await ctx.db.query("sessions").order("desc").collect();
@@ -71,13 +103,17 @@ export const get = query({
 });
 
 export const create = mutation({
-  args: { title: v.optional(v.string()) },
+  args: {
+    title: v.optional(v.string()),
+    projectId: v.optional(v.id("projects")),
+  },
   handler: async (ctx, args) => {
     const now = Date.now();
     return await ctx.db.insert("sessions", {
       title: args.title ?? "New Session",
       createdAt: now,
       lastSeenAt: now,
+      ...(args.projectId ? { projectId: args.projectId } : {}),
     });
   },
 });
@@ -112,6 +148,20 @@ export const setClaudeSessionId = mutation({
   args: { id: v.id("sessions"), claudeSessionId: v.string() },
   handler: async (ctx, args) => {
     await ctx.db.patch(args.id, { claudeSessionId: args.claudeSessionId });
+  },
+});
+
+export const updateContextUsage = mutation({
+  args: {
+    id: v.id("sessions"),
+    contextUsed: v.number(),
+    contextWindow: v.number(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.id, {
+      contextUsed: args.contextUsed,
+      contextWindow: args.contextWindow,
+    });
   },
 });
 
@@ -175,6 +225,46 @@ export const permanentDelete = mutation({
       await ctx.db.delete(upload._id);
     }
     await ctx.db.delete(args.id);
+  },
+});
+
+export const fork = mutation({
+  args: { id: v.id("sessions") },
+  handler: async (ctx, args) => {
+    const source = await ctx.db.get(args.id);
+    if (!source) throw new Error("Session not found");
+
+    const now = Date.now();
+    const newSessionId = await ctx.db.insert("sessions", {
+      title: `Forked: ${source.title}`,
+      createdAt: now,
+      lastSeenAt: now,
+      ...(source.projectId ? { projectId: source.projectId } : {}),
+    });
+
+    const messages = await ctx.db
+      .query("messages")
+      .withIndex("by_session", (q) => q.eq("sessionId", args.id))
+      .collect();
+
+    for (const msg of messages) {
+      if (msg.streaming) continue; // skip in-progress messages
+      await ctx.db.insert("messages", {
+        sessionId: newSessionId,
+        role: msg.role,
+        content: msg.content,
+        streaming: false,
+        ...(msg.wasPlan ? { wasPlan: msg.wasPlan } : {}),
+        ...(msg.planContent ? { planContent: msg.planContent } : {}),
+        ...(msg.steps ? { steps: msg.steps } : {}),
+        ...(msg.attachments ? { attachments: msg.attachments } : {}),
+        ...(msg.cancelled ? { cancelled: msg.cancelled } : {}),
+        ...(msg.error ? { error: msg.error } : {}),
+        createdAt: msg.createdAt,
+      });
+    }
+
+    return newSessionId;
   },
 });
 

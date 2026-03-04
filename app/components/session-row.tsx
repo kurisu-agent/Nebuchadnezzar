@@ -32,6 +32,10 @@ export type SessionInfo = {
   isStreaming: boolean;
   isPlanning: boolean;
   hasUnseen: boolean;
+  projectColor?: string;
+  projectName?: string;
+  contextUsed?: number;
+  contextWindow?: number;
 };
 
 const SWIPE_THRESHOLD = 80;
@@ -141,6 +145,13 @@ export function SessionRow({
       {session.hasUnseen && !active && (
         <div className="absolute left-0 top-2 bottom-2 w-[3px] rounded-r-full bg-primary z-10" />
       )}
+      {/* Project color indicator — right side */}
+      {session.projectColor && (
+        <div
+          className="absolute right-0 top-0 bottom-0 w-[3px] z-10"
+          style={{ backgroundColor: session.projectColor }}
+        />
+      )}
       {/* Workspace action behind — slides in from left on right swipe */}
       {isSwipingRight && onAddToWorkspace && (
         <div
@@ -191,8 +202,33 @@ export function SessionRow({
           <div className="flex items-center gap-1.5">
             <span className="text-sm line-clamp-2">{session.title}</span>
           </div>
-          <div className="text-xs opacity-50">{timeAgo}</div>
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs opacity-50">{timeAgo}</span>
+            {session.projectName && (
+              <span
+                className="text-[10px] font-medium truncate max-w-[120px]"
+                style={{ color: session.projectColor }}
+              >
+                {session.projectName}
+              </span>
+            )}
+          </div>
         </div>
+      </div>
+      {/* Context usage bar */}
+      <div className="h-[2px] w-full bg-base-300">
+        <div
+          className={`h-full ${
+            session.contextUsed && session.contextWindow && session.contextUsed / session.contextWindow > 0.85
+              ? "bg-error"
+              : session.contextUsed && session.contextWindow && session.contextUsed / session.contextWindow > 0.65
+                ? "bg-warning"
+                : "bg-primary"
+          }`}
+          style={{
+            width: `${Math.max(2, session.contextUsed && session.contextWindow && session.contextWindow > 0 ? Math.min(100, (session.contextUsed / session.contextWindow) * 100) : 0)}%`,
+          }}
+        />
       </div>
     </li>
   );

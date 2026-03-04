@@ -48,6 +48,7 @@ export function SessionDrawer({
   children: React.ReactNode;
 }) {
   const sessions = useQuery(api.sessions.list);
+  const projects = useQuery(api.projects.list);
   const workspaces = useQuery(api.workspaces.list);
   const removeSession = useMutation(api.sessions.remove);
   const removeMany = useMutation(api.sessions.removeMany);
@@ -112,6 +113,16 @@ export function SessionDrawer({
       for (const id of workspaceSessionIds) allIds.add(id);
     }
 
+    // Build project lookup (color + name)
+    const projectColorMap = new Map<string, string>();
+    const projectNameMap = new Map<string, string>();
+    if (projects) {
+      for (const p of projects) {
+        projectColorMap.set(p._id, p.color);
+        projectNameMap.set(p._id, p.name);
+      }
+    }
+
     // Classify sessions and populate groups
     const standalone: SessionInfo[] = [];
     const old: SessionInfo[] = [];
@@ -119,12 +130,21 @@ export function SessionDrawer({
 
     if (sessions) {
       for (const s of sessions) {
-        sessionLookup.set(s._id, s);
+        const enriched: SessionInfo = {
+          ...s,
+          projectColor: s.projectId
+            ? projectColorMap.get(s.projectId)
+            : undefined,
+          projectName: s.projectId
+            ? projectNameMap.get(s.projectId)
+            : undefined,
+        };
+        sessionLookup.set(s._id, enriched);
         const inWs = allIds.has(s._id);
         if (now - s.lastActivity > ONE_HOUR && !s.isStreaming && !inWs) {
-          old.push(s);
+          old.push(enriched);
         } else if (!inWs) {
-          standalone.push(s);
+          standalone.push(enriched);
         }
       }
     }
@@ -134,21 +154,28 @@ export function SessionDrawer({
     for (const [, g] of groupMap) {
       const groupSessions: SessionInfo[] = [];
       let maxActivity = 0;
+      let anyStreaming = false;
       for (const id of g.sessionIds) {
         const s = sessionLookup.get(id);
         if (s) {
           groupSessions.push(s);
           if (s.lastActivity > maxActivity) maxActivity = s.lastActivity;
+          if (s.isStreaming) anyStreaming = true;
         }
       }
       if (groupSessions.length > 0) {
-        groups.push({
-          workspaceId: g.workspaceId,
-          name: g.name,
-          sessionIds: g.sessionIds,
-          sessions: groupSessions,
-          lastActivity: maxActivity,
-        });
+        // Hide workspace if all sessions are old and none are streaming
+        if (now - maxActivity > ONE_HOUR && !anyStreaming) {
+          old.push(...groupSessions);
+        } else {
+          groups.push({
+            workspaceId: g.workspaceId,
+            name: g.name,
+            sessionIds: g.sessionIds,
+            sessions: groupSessions,
+            lastActivity: maxActivity,
+          });
+        }
       }
     }
 
@@ -182,7 +209,7 @@ export function SessionDrawer({
     }
 
     return { recentItems: items, oldSessions: old, allWsSessionIds: allIds };
-  }, [workspaces, workspaceSessionIds, sessions, now]);
+  }, [workspaces, workspaceSessionIds, sessions, projects, now]);
 
   const close = () => {
     if (toggleRef.current) toggleRef.current.checked = false;
@@ -236,13 +263,20 @@ export function SessionDrawer({
           htmlFor="session-drawer"
           aria-label="close sidebar"
           className="drawer-overlay"
+          style={{ backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' }}
         />
         <div className="bg-base-200 h-full w-72 flex flex-col">
           <div className="p-4 pb-3 pt-[max(1rem,env(safe-area-inset-top))] flex items-center justify-between shrink-0">
-            <span className="text-sm font-semibold opacity-70 flex items-center gap-1.5">
+            <a
+              onClick={() => {
+                router.push("/");
+                toggleRef.current && (toggleRef.current.checked = false);
+              }}
+              className="text-sm font-semibold opacity-70 flex items-center gap-1.5 cursor-pointer active:opacity-100"
+            >
               <RocketLaunch size={16} weight="duotone" />
               Nebuchadnezzar
-            </span>
+            </a>
             <div className="flex items-center gap-1">
               <button
                 onClick={() => setShowSearch(true)}
