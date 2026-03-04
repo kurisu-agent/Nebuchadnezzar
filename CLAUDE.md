@@ -71,6 +71,15 @@ Run `npm run deploy` to build and start the production server on port 30003. Thi
 - **Schema caveat**: If you push a breaking Convex schema change via `convex dev`, the prod build may become stale. Rebuild with `npm run deploy` after schema changes. Keep schema changes additive when possible to avoid this.
 - To stop a running prod server: `lsof -ti :30003 | xargs kill`
 
+### Port conflicts with other projects
+
+Nebuchadnezzar manages multiple projects under `~/Code/`. When working in a project session, be aware that **other projects may already be using common ports** (3000, 3001, 5173, 8080, etc.). Before starting a dev server in a project:
+
+1. **Check for port conflicts first**: `ss -tlnp | grep :<port>` or `lsof -ti :<port>`
+2. **Nebuchadnezzar itself uses**: ports 3000 (Next.js dev), 3210 (Convex), and optionally 30003 (prod build)
+3. **If a port is taken**, use an alternate port (e.g. `--port 3001`) and tell the user which port you chose and why
+4. **Never kill processes on ports you didn't start** — they likely belong to another project or Nebuchadnezzar itself
+
 ### Env vars (.env.local)
 
 - `CONVEX_URL` — localhost URL for server-side (API routes)
@@ -90,6 +99,7 @@ Run `npm run deploy` to build and start the production server on port 30003. Thi
 - **No auth**: Single-user Coder environment, no login needed
 - **YOLO mode**: Agent SDK runs with `permissionMode: 'bypassPermissions'`
 - **Code quality**: Use `npm run lint` (ESLint) and `npm run format` (Prettier) before committing.
+- **daisyUI modals**: When rendering daisyUI `.modal` components inside deeply nested flex/overflow containers (e.g. chat panes), use `createPortal(... , document.body)` to render them at the document root. Without a portal, the modal backdrop and positioning break due to parent `overflow: hidden` or stacking contexts. Also avoid nesting `<button>` inside `<button>` — it causes React hydration errors. Use a `<div>` with `onClick` for the outer clickable area instead.
 
 ## Key Files
 
@@ -179,6 +189,8 @@ Take screenshots of web pages using the Playwright screenshot script:
 cd /home/coder/Code/Nebuchadnezzar && npx tsx scripts/take-screenshot.ts "<URL>" [--device pixel-9|pixel-7|iphone-14|iphone-15|ipad-pro|desktop] [--full-page] [--wait <ms>]
 ```
 
+**Always use `http://localhost:<port>/path` URLs** — the script runs locally and can access localhost directly. External proxy URLs are auto-converted to localhost, but prefer passing localhost URLs directly. Example: `http://localhost:3000/dashboard`.
+
 Default device is `pixel-9` (412×923 @2.625x). The script outputs a `[screenshot:UPLOAD_ID]` marker. After taking a screenshot, include `[screenshot:UPLOAD_ID]` in your response so the UI displays it inline. **You MUST copy the `[screenshot:...]` line from the script output into your response verbatim.** Without it the user cannot see the screenshot.
 
 ## MCP Server (Nebuchadnezzar Tools)
@@ -201,6 +213,11 @@ Agent SDK → reads .mcp.json → starts mcp/server.ts
 | Tool | Params | Effect |
 |------|--------|--------|
 | `open_iframe` | `url` | Opens a URL in an iframe pane above the current chat |
+| `list_projects` | _(none)_ | Lists all registered projects (name, path, color) |
+| `get_current_project` | _(none)_ | Gets the project associated with the current chat session |
+| `get_port_url` | `port` (number) | Converts a localhost port to the external URL the user can access. **Always use this instead of giving localhost URLs.** |
+| `register_port` | `port` (number) | Registers a port with the current session's project (links it in the Ports dashboard) |
+| `unregister_port` | `port` (number) | Unregisters a port from the current session's project |
 
 ### Adding New Tools
 
@@ -232,3 +249,4 @@ The tool is automatically discoverable by Claude — no CLAUDE.md changes needed
 When the user says "remember X", add it to this file under the appropriate section (or this section if no other fits).
 
 - **To-do tracking**: When the user asks to make a to-do or add a task, update `TODO.md` in the project root (not just the in-session TodoWrite tool).
+- **Git init on project creation**: All new/imported projects get `git init` automatically. Blank projects run it after mkdir, imports run it if `.git` doesn't already exist, cloned repos already have git. Changes are left unstaged by default until the user asks to commit.

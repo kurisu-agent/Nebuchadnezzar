@@ -5,14 +5,14 @@ import os from "os";
 
 export const dynamic = "force-dynamic";
 
-const ALLOWED_ROOT = path.join(os.homedir(), ".claude");
+const HOME_DIR = os.homedir();
 const MAX_FILE_SIZE = 1024 * 1024; // 1MB
 
 async function validatePath(requestedPath: string): Promise<string | null> {
   try {
     const resolved = path.resolve(requestedPath);
     const real = await fs.realpath(resolved);
-    if (!real.startsWith(ALLOWED_ROOT)) return null;
+    if (!real.startsWith(HOME_DIR)) return null;
     return real;
   } catch {
     return null;
