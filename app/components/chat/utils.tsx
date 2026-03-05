@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 
 /** Format bytes into a human-readable string. */
 export function formatFileSize(bytes: number): string {
@@ -44,6 +44,57 @@ export function formatTime(timestamp: number): string {
     hour: "numeric",
     minute: "2-digit",
   });
+}
+
+/** Formats a relative time string from a timestamp. */
+function formatRelativeTime(
+  timestamp: number,
+  now: number,
+  precise: boolean,
+): string {
+  const diffMs = Math.max(0, now - timestamp);
+  const diffSec = Math.floor(diffMs / 1000);
+  const diffMin = Math.floor(diffSec / 60);
+  const diffHr = Math.floor(diffMin / 60);
+  const diffDays = Math.floor(diffHr / 24);
+
+  if (diffDays > 0) return `${diffDays}d ago`;
+  if (diffHr > 0) return `${diffHr}h ago`;
+  if (diffMin > 0) {
+    if (precise) {
+      const remainSec = diffSec % 60;
+      return remainSec > 0
+        ? `${diffMin}m ${remainSec}s ago`
+        : `${diffMin}m ago`;
+    }
+    return `${diffMin}m ago`;
+  }
+  if (precise && diffSec > 0) return `${diffSec}s ago`;
+  return precise ? "now" : "just now";
+}
+
+/**
+ * Displays a live-updating relative time (e.g. "2m 30s ago").
+ * When `streaming` is true, updates every second. Otherwise every 30s.
+ */
+export function RelativeTime({
+  timestamp,
+  streaming = false,
+}: {
+  timestamp: number;
+  streaming?: boolean;
+}) {
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const interval = streaming ? 1000 : 60000;
+    const id = setInterval(() => {
+      setNow(Date.now());
+    }, interval);
+    return () => clearInterval(id);
+  }, [streaming]);
+
+  return <>{formatRelativeTime(timestamp, now, streaming)}</>;
 }
 
 /**

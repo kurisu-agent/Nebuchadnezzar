@@ -23,7 +23,11 @@ import {
 } from "@phosphor-icons/react";
 import { useUpload } from "@/app/hooks/use-upload";
 import { TopBar } from "@/app/components/top-bar";
-import { formatDateLabel, formatTime } from "@/app/components/chat/utils";
+import {
+  formatDateLabel,
+  formatTime,
+  RelativeTime,
+} from "@/app/components/chat/utils";
 import { StreamingMarkdown } from "@/app/components/chat/streaming-markdown";
 import { CollapsibleMessage } from "@/app/components/chat/collapsible-message";
 import { ErrorMessage } from "@/app/components/chat/error-message";
@@ -251,7 +255,9 @@ function FullNavbar({
       </button>
       {projectName && (
         <button
-          onClick={() => projectId && router.push(`/project/${projectId}/sessions`)}
+          onClick={() =>
+            projectId && router.push(`/project/${projectId}/sessions`)
+          }
           className="btn btn-ghost btn-xs h-auto min-h-0 py-0.5 px-1.5 shrink-0 max-w-[40%] overflow-hidden active:bg-base-300"
         >
           <span
@@ -277,10 +283,7 @@ function FullNavbar({
           <div className="flex-1 min-w-0">{titleContent}</div>
         </div>
       ) : (
-        <TopBar
-          bg={dynamicBg}
-          className="transition-colors duration-300"
-        >
+        <TopBar bg={dynamicBg} className="transition-colors duration-300">
           {titleContent}
         </TopBar>
       )}
@@ -837,6 +840,11 @@ function ChatPaneContent({
                       )}
                       <span className="text-[10px] opacity-30">
                         {formatTime(message.createdAt)}
+                        {" · "}
+                        <RelativeTime
+                          timestamp={message.createdAt}
+                          streaming={!!message.streaming}
+                        />
                       </span>
                       {message.streaming && (
                         <div className="flex items-center gap-2">
@@ -873,6 +881,8 @@ function ChatPaneContent({
                 <div className="flex items-center gap-4 justify-between">
                   <span className="text-[10px] opacity-30">
                     {formatTime(Date.now())}
+                    {" · "}
+                    <RelativeTime timestamp={Date.now()} streaming />
                   </span>
                   <div className="flex items-center gap-2">
                     <span className="loading loading-dots loading-xs opacity-50" />
@@ -898,9 +908,13 @@ function ChatPaneContent({
           <div className="h-[2px] w-full bg-base-300">
             <div
               className={`h-full transition-all duration-500 ease-out ${
-                sessionDoc?.contextUsed && sessionDoc?.contextWindow && sessionDoc.contextUsed / sessionDoc.contextWindow > 0.85
+                sessionDoc?.contextUsed &&
+                sessionDoc?.contextWindow &&
+                sessionDoc.contextUsed / sessionDoc.contextWindow > 0.85
                   ? "bg-error"
-                  : sessionDoc?.contextUsed && sessionDoc?.contextWindow && sessionDoc.contextUsed / sessionDoc.contextWindow > 0.65
+                  : sessionDoc?.contextUsed &&
+                      sessionDoc?.contextWindow &&
+                      sessionDoc.contextUsed / sessionDoc.contextWindow > 0.65
                     ? "bg-warning"
                     : "bg-primary"
               }`}
