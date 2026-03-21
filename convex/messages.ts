@@ -145,6 +145,13 @@ export const removeLastExchange = mutation({
   },
 });
 
+export const deleteMessage = mutation({
+  args: { id: v.id("messages") },
+  handler: async (ctx, args) => {
+    await ctx.db.delete(args.id);
+  },
+});
+
 export const cancelStreaming = mutation({
   args: { messageId: v.id("messages") },
   handler: async (ctx, args) => {

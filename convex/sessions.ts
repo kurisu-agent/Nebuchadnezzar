@@ -151,6 +151,13 @@ export const setClaudeSessionId = mutation({
   },
 });
 
+export const clearClaudeSessionId = mutation({
+  args: { id: v.id("sessions") },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.id, { claudeSessionId: undefined });
+  },
+});
+
 export const updateContextUsage = mutation({
   args: {
     id: v.id("sessions"),

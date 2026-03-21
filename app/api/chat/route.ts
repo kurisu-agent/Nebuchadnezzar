@@ -479,6 +479,21 @@ async function processChatStream(
         continue;
       }
 
+      // If we were resuming a session and it failed, the session file may be
+      // corrupt or incomplete (e.g. from a cancelled first message). Clear the
+      // stored session ID and retry once as a fresh session.
+      if (sdkOptions.resume) {
+        console.warn(
+          `[claude sdk] resume failed for session ${sdkOptions.resume}, retrying as fresh session`,
+          err instanceof Error ? err.message : String(err),
+        );
+        delete sdkOptions.resume;
+        await convex.mutation(api.sessions.clearClaudeSessionId, {
+          id: sessionId,
+        });
+        continue;
+      }
+
       // Non-retryable or exhausted retries — write error to message
       break;
     }
