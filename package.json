@@ -18,12 +18,12 @@
     "convex"
   ],
   "scripts": {
-    "dev": "next dev --turbopack",
+    "dev": "tsx server.ts",
     "dev:convex": "CONVEX_AGENT_MODE=anonymous convex dev",
     "build": "next build",
-    "start": "next start",
-    "start:prod": "next start -p 30003",
-    "deploy": "NODE_ENV=production next build --experimental-build-mode compile && next start -p 30003",
+    "start": "tsx server.ts",
+    "start:prod": "PORT=30003 NODE_ENV=production tsx server.ts",
+    "deploy": "NODE_ENV=production next build --experimental-build-mode compile && PORT=30003 NODE_ENV=production tsx server.ts",
     "lint": "eslint .",
     "format": "prettier --write '**/*.{ts,tsx,json,css}'",
     "format:check": "prettier --check '**/*.{ts,tsx,json,css}'",
@@ -63,6 +63,7 @@
     "playwright": "^1.58.2",
     "prettier": "^3.8.1",
     "tailwindcss": "^4.1.0",
+    "tsx": "^4.21.0",
     "typescript": "^5.7.0"
   }
 }

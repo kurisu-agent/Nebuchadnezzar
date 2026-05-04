@@ -5,13 +5,13 @@ import { ReactNode, useMemo } from "react";
 import { NavigationWatcher } from "./components/navigation-watcher";
 
 function getConvexUrl() {
-  if (
-    typeof window !== "undefined" &&
-    window.location.hostname === "localhost"
-  ) {
-    return "http://localhost:3210";
+  if (process.env.NEXT_PUBLIC_CONVEX_URL) {
+    return process.env.NEXT_PUBLIC_CONVEX_URL;
   }
-  return process.env.NEXT_PUBLIC_CONVEX_URL!;
+  if (typeof window !== "undefined") {
+    return `${window.location.origin}/convex`;
+  }
+  return "http://localhost:3000/convex";
 }
 
 export function ConvexClientProvider({ children }: { children: ReactNode }) {
